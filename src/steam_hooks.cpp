@@ -16,10 +16,18 @@ public:
     bool BIsVACBanned() { return false; }
     int GetDLCCount() {
         spdlog::info("ISteamApps->GetDLCCount called PID {0}", getpid());
+        if (is_unlockall()) {
+            // the game knows its own DLCs - expose the real count
+            return real_steamApps->GetDLCCount();
+        }
         return dlcs.size();
     }
     bool BIsDlcInstalled(AppId_t appID) {
         spdlog::info("ISteamApps->BIsDlcInstalled called");
+        if (is_unlockall()) {
+            spdlog::info("BIsDlcInstalled unlockall: unlocked {}", appID);
+            return true;
+        }
         if (is_dlc_unlocked(appID)) {
             spdlog::info("BIsDlcInstalled unlocked {}", appID);
             return true;
@@ -28,6 +36,9 @@ public:
     }
     bool BGetDLCDataByIndex(int iDLC, AppId_t* pAppID, bool* pbAvailable, char* pchName, int cchNameBufferSize) {
         spdlog::info("ISteamApps->BGetDLCDataByIndex called");
+        if (is_unlockall()) {
+            return real_steamApps->BGetDLCDataByIndex(iDLC, pAppID, pbAvailable, pchName, cchNameBufferSize);
+        }
         if ((size_t)iDLC >= dlcs.size()) {
             return false;
         }
@@ -60,6 +71,10 @@ public:
             return real_steamApps->BIsSubscribedApp(appID); 
         } else {
             spdlog::info("BIsSubscribedApp creamified called");
+            if (is_unlockall()) {
+                spdlog::info("BIsSubscribedApp unlockall: unlocked {}", appID);
+                return true;
+            }
             if (is_dlc_unlocked(appID)) {
                 spdlog::info("BIsSubscribedApp unlocked {}", appID);
                 return true;
@@ -162,7 +177,7 @@ public:
     };
 	EUserHasLicenseForAppResult UserHasLicenseForApp( CSteamID steamID, AppId_t appID ) {
         spdlog::info("ISteamUser->UserHasLicenseForApp {} called", appID);
-        if (is_dlc_unlocked(appID)) {
+        if (is_unlockall() || is_dlc_unlocked(appID)) {
             spdlog::info("ISteamUser_UserHasLicenseForApp result: owned");
             return (EUserHasLicenseForAppResult)0;
         } else {
@@ -274,7 +289,7 @@ public:
 	void CancelAuthTicket( HAuthTicket hAuthTicket ) { return real_steamUser->CancelAuthTicket(hAuthTicket); };
 	EUserHasLicenseForAppResult UserHasLicenseForApp( CSteamID steamID, AppId_t appID ) {
         spdlog::info("ISteamUser->UserHasLicenseForApp {} called", appID);
-        if (is_dlc_unlocked(appID)) {
+        if (is_unlockall() || is_dlc_unlocked(appID)) {
             spdlog::info("ISteamUser_UserHasLicenseForApp result: owned");
             return (EUserHasLicenseForAppResult)0;
         } else {

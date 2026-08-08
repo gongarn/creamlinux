@@ -57,6 +57,11 @@ If the script does not work for you, you can install `creamlinux` manually. Bewa
 
 The list of "supported" DLCs is stored in `cream_api.ini`. If you want to test creamlinux on a new game or a new DLC has just come out, you can add more entries here manually.
 
+### Unlocking everything without a DLC list
+Set `unlockall = true` in the `[config]` section of `cream_api.ini` and every DLC
+the game knows about is treated as installed - the `[dlc]` list is not needed
+(though it is still useful when you want to control exactly which DLCs show up).
+
 ### Adding a new game (DLC auto-fetch)
 Instead of hunting for DLC ids by hand, use the bundled helper:
 ```

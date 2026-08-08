@@ -66,6 +66,7 @@ int main() {
     CHECK(ini["config"]["issubscribedapp_on_false_use_real"] == "true",
           "config section read");
     CHECK(ini["dlc"].has("394360"), "dlc section contains key 394360");
+    CHECK(!is_unlockall(), "unlockall is off by default");
 
     // --- resolve_config_path ----------------------------------------------
     CHECK(resolve_config_path(kTestIni) == kTestIni,
@@ -83,6 +84,17 @@ int main() {
     fclose(f);
     load_config(kEmptyIni);
     CHECK(dlcs.empty(), "empty ini yields empty DLC list");
+    CHECK(!is_unlockall(), "unlockall false on empty ini");
+
+    // --- unlockall flag ----------------------------------------------------
+    dlcs.clear();
+    ini.clear();
+    const char* kUnlockIni = "/tmp/creamlinux_test_unlock.ini";
+    f = fopen(kUnlockIni, "w");
+    fprintf(f, "[config]\nunlockall = true\n");
+    fclose(f);
+    load_config(kUnlockIni);
+    CHECK(is_unlockall(), "unlockall true when set in [config]");
 
     if (failures == 0) {
         printf("\nAll tests passed.\n");

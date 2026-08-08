@@ -54,11 +54,18 @@ extern "C" void* CreateInterface(const char *pName, int *pReturnCode) {
 
 extern "C" int SteamAPI_ISteamApps_GetDLCCount(ISteamApps* self) {
     spdlog::info("SteamAPI_ISteamApps_GetDLCCount called (flat API)");
+    if (is_unlockall()) {
+        return self->GetDLCCount();
+    }
     return (int)dlcs.size();
 }
 
 extern "C" bool SteamAPI_ISteamApps_BIsDlcInstalled(ISteamApps* self, AppId_t appID) {
     spdlog::info("SteamAPI_ISteamApps_BIsDlcInstalled called (flat API) appID {}", appID);
+    if (is_unlockall()) {
+        spdlog::info("SteamAPI_ISteamApps_BIsDlcInstalled unlockall: unlocked {}", appID);
+        return true;
+    }
     if (is_dlc_unlocked(appID)) {
         spdlog::info("SteamAPI_ISteamApps_BIsDlcInstalled unlocked {}", appID);
         return true;
@@ -71,6 +78,10 @@ extern "C" bool SteamAPI_ISteamApps_BIsSubscribedApp(ISteamApps* self, AppId_t a
     if (ini["methods"]["disable_steamapps_issubscribedapp"] == "true") {
         return self->BIsSubscribedApp(appID);
     }
+    if (is_unlockall()) {
+        spdlog::info("SteamAPI_ISteamApps_BIsSubscribedApp unlockall: unlocked {}", appID);
+        return true;
+    }
     if (is_dlc_unlocked(appID)) {
         spdlog::info("SteamAPI_ISteamApps_BIsSubscribedApp unlocked {}", appID);
         return true;
@@ -80,6 +91,9 @@ extern "C" bool SteamAPI_ISteamApps_BIsSubscribedApp(ISteamApps* self, AppId_t a
 
 extern "C" bool SteamAPI_ISteamApps_BGetDLCDataByIndex(ISteamApps* self, int iDLC, AppId_t* pAppID, bool* pbAvailable, char* pchName, int cchNameBufferSize) {
     spdlog::info("SteamAPI_ISteamApps_BGetDLCDataByIndex called (flat API)");
+    if (is_unlockall()) {
+        return self->BGetDLCDataByIndex(iDLC, pAppID, pbAvailable, pchName, cchNameBufferSize);
+    }
     if ((size_t)iDLC >= dlcs.size()) {
         return false;
     }
@@ -97,7 +111,7 @@ extern "C" bool SteamAPI_ISteamApps_BGetDLCDataByIndex(ISteamApps* self, int iDL
 
 extern "C" EUserHasLicenseForAppResult SteamAPI_ISteamUser_UserHasLicenseForApp(ISteamUser* self, uint64 steamID, AppId_t appID) {
     spdlog::info("SteamAPI_ISteamUser_UserHasLicenseForApp called (flat API) appID {}", appID);
-    if (is_dlc_unlocked(appID)) {
+    if (is_unlockall() || is_dlc_unlocked(appID)) {
         spdlog::info("SteamAPI_ISteamUser_UserHasLicenseForApp result: owned");
         return (EUserHasLicenseForAppResult)0;
     }

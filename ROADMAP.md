@@ -17,15 +17,15 @@ plus a single install tool covering both native and Proton titles.
 | 8 | tools/update-dlc.py | DLC list from Steam Store API, preserves ini comments/sections |
 | 9 | tools/setup.py | auto-detect native/Proton, SmokeAPI install, shared cream_api.ini |
 | 10 | setup.py --scan/--install | Steam library discovery (libraryfolders.vdf + appmanifest_*.acf), table view, per-appid install, Steam API files found in subdirs (bin/x64, lib) |
-
+| 11 | unlockall = true | every DLC the game knows about is treated as installed - no ID list needed; interface + flat API hooks | CreamAPI |
 ## 🚧 Planned (priority order)
 
 | # | Item | Source of idea | Effort | Impact |
 |---|------|----------------|--------|--------|
-| 1 | `unlockall = true` - unlock all DLCs without an ID list (GetDLCCount/BGetDLCDataByIndex -> real, BIsDlcInstalled -> true) | CreamAPI | Medium | DLC list becomes non-critical |
-| 2 | `setup.py --smokeapi-mode hook\|koaloader\|proxy` - Proton fallback modes | Koaloader | Low | More working Proton games |
-| 3 | libsteam_api.so bitness check in cream.sh - preload only matching arch | CreamAPI | Low | Clean logs (#71) |
-| 4 | `[config] logging = false` - disable spdlog output | CreamAPI | Low | Quiet stderr |
+| 1 | setup.py --smokeapi-mode hook\|koaloader\|proxy - Proton fallback modes | Koaloader | Low | More working Proton games |
+| 2 | libsteam_api.so bitness check in cream.sh - preload only matching arch | CreamAPI | Low | Clean logs (#71) |
+| 3 | `[config] logging = false` - disable spdlog output | CreamAPI | Low | Quiet stderr |
+
 
 ## 📋 Backlog
 

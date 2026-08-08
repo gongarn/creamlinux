@@ -15,6 +15,10 @@ extern mINI::INIStructure ini;
 // Returns true if the given appID is present in the cream_api.ini [dlc] list.
 bool is_dlc_unlocked(AppId_t appID);
 
+// Returns true when [config] unlockall is enabled: every DLC the game knows
+// about is treated as installed, no ID list required.
+bool is_unlockall();
+
 // Reads the ini file and fills the global dlcs vector.
 void load_config(const std::string& creaminipath);
 

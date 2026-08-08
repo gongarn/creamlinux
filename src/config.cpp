@@ -17,6 +17,10 @@ bool is_dlc_unlocked(AppId_t appID) {
         [&](const std::tuple<int, std::string>& a) { return std::get<0>(a) == appID; }) != std::end(dlcs);
 }
 
+bool is_unlockall() {
+    return ini["config"]["unlockall"] == "true";
+}
+
 void load_config(const std::string& creaminipath) {
     spdlog::info("Reading config from {}", creaminipath);
     mINI::INIFile file(creaminipath);
