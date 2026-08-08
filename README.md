@@ -3,6 +3,12 @@ A CreamAPI clone for Linux.
 
 Since 20PercentRendered has archived the repo, I have decided to fork and support it as far as I can.
 
+## Features
+- Unlocks DLCs listed in `cream_api.ini` for native Linux Steam games (no Proton/Wine support)
+- Supports modern Steam SDK interfaces: **ISteamApps v008/v009**, **SteamUser v020-v023**, **SteamClient v017-v023**
+- Hooks the **flat API** (`SteamAPI_ISteamApps_*`, `SteamAPI_ISteamUser_*`) used by Unity/Steamworks.NET titles
+- `cream_api.ini` is auto-synced from upstream every week via CI
+
 ## Support
 Creamlinux *should* work on most Steam games. It does not work with Proton or Wine - use SmokeAPI or other alternatives made specifically for Windows instead.
 The following games have been tested and definitely confirmed to work:
@@ -28,7 +34,7 @@ If the script does not work for you, you can install `creamlinux` manually. Bewa
 
 ## Manual Installation
 0. You will need the actual, **up-to-date** DLC files in the game. Creamlinux does **not** auto-download anything
-1. Download the [latest](https://github.com/anticitizn/creamlinux/releases/latest/download/creamlinux.zip) release of Creamlinux
+1. Download the [latest](https://github.com/gongarn/creamlinux/releases/latest/download/creamlinux.zip) release of Creamlinux
 2. Unzip it and copy the files to the game's directory
 3. Set the game's steam launch params to `sh ./cream.sh %command%`
 4. Launch the game and have fun!
@@ -44,7 +50,7 @@ If that doesn't work, please check the Troubleshooting section below.
 
 1. Clone the project:
 ```
-git clone https://github.com/anticitizn/creamlinux
+git clone https://github.com/gongarn/creamlinux
 ```
 2. Build the project:
 ```
@@ -62,9 +68,23 @@ This is normal. The DLCs should still work.
 
 ![Red triangles next to DLCs are normal](https://cdn.discordapp.com/attachments/663174968791662594/1093109044295766106/image.png)
 
+## MangoHud doesn't work with creamlinux
+Use the `mangohud` launch prefix: `sh ./cream.sh mangohud %command%`. The script detects it and sets
+`MANGOHUD=1` / `MANGOHUD_DLSYM=1` so both preloads coexist (previously they clashed: only one
+of the two would take effect).
+
+## Launch options don't start the game, but running cream.sh from a terminal works
+Steam may launch the game from a different working directory, so relative paths fail.
+`cream.sh` now switches to its own directory automatically; make sure the script and the
+`.so` files are in the game's root directory (not a subfolder).
+
 ## DLCs don't work
 - Have you made sure to download the latest version of the DLC files? Sometimes unrelated patches or updates to the game will modify some DLC files, and creamlinux is currently somewhat sensitive to outdated files.
 - Do you have Steam installed from a flatpak? Creamlinux doesn't play nicely with it, please try a native version if possible
+- Games on a recent Steamworks SDK (e.g. Crusader Kings III, recent Paradox titles) need the
+  modern interface support (SteamApps v009, SteamUser v023, SteamClient v023) included in this fork.
+  If your game still shows no DLCs, make sure you are not running an old release.
+- Unity/Steamworks.NET titles (e.g. Dead Cells) call the flat API - supported since this fork.
 
 ## Game not starting after enabling creamlinux
 Are you sure that the creamlinux files are at the game's root directory and not in a subfolder?

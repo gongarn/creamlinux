@@ -1,7 +1,26 @@
 #!/bin/bash
+# cream.sh - launch a game with creamlinux DLC unlock hooks.
+#
+# Usage in Steam launch options:
+#   sh ./cream.sh %command%
+#   sh ./cream.sh mangohud %command%   # with MangoHud (see below)
 copy_file() {
     cp "$1" "$2" || { echo "Error: Failed to copy $1 to $2"; exit 1; }
 }
+
+# Steam may launch games from a different working directory (issue #62), so
+# always resolve paths relative to this script's own location.
+cd "$(dirname "$(readlink -f "$0")")"
+
+# MangoHud compatibility (issue #51): MangoHud's wrapper appends itself to
+# LD_PRELOAD, and our dlsym interposition must not confuse it. MANGOHUD_DLSYM
+# is a no-op on modern MangoHud (dlsym is the default) but keeps older
+# versions working.
+if [ "$1" = "mangohud" ]; then
+    export MANGOHUD=1
+    export MANGOHUD_DLSYM=1
+    echo "cream.sh: MangoHud detected, setting MANGOHUD=1 and MANGOHUD_DLSYM=1"
+fi
 
 LIBSTEAM_API_DIR=$(find . -name "libsteam_api.so" -printf "%h\n" | head -n 1)
 [ -z "$LIBSTEAM_API_DIR" ] && { echo "Error: libsteam_api.so not found."; exit 1; }
