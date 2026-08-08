@@ -38,6 +38,7 @@ import zipfile
 USER_AGENT = "creamlinux-setup/1.0"
 
 SMOKEAPI_REPO = "acidicoala/SmokeAPI"
+KOALOADER_REPO = "acidicoala/Koaloader"
 CREAMLINUX_REPO = "gongarn/creamlinux"
 
 CREAM_FILES = ["lib64Creamlinux.so", "lib32Creamlinux.so", "cream.sh",
@@ -65,12 +66,8 @@ def latest_release_asset(repo):
 # -------------------------------------------------------------- detection --
 
 def detect_mode(game_dir):
-    if os.path.exists(os.path.join(game_dir, "libsteam_api.so")):
-        return "native"
-    if os.path.exists(os.path.join(game_dir, "steam_api64.dll")) or \
-       os.path.exists(os.path.join(game_dir, "steam_api.dll")):
-        return "proton"
-    return None
+    found_type, _ = find_steam_api_files(game_dir)
+    return found_type
 
 
 def detect_bitness(game_dir):
@@ -141,33 +138,96 @@ def download_smokeapi(cache_dir):
     return zip_path
 
 
-def install_proton(game_dir, cache_dir, dry_run, verbose):
+def download_koaloader(cache_dir):
+    zip_path = os.path.join(cache_dir, "koaloader-latest.zip")
+    if os.path.exists(zip_path):
+        print(f"Using cached Koaloader: {zip_path}")
+        return zip_path
+    os.makedirs(cache_dir, exist_ok=True)
+    print("Downloading Koaloader...")
+    name, url = latest_release_asset(KOALOADER_REPO)
+    data = http_get(url)
+    with open(zip_path, "wb") as fh:
+        fh.write(data)
+    print(f"  saved {name} ({len(data)} bytes)")
+    return zip_path
+
+
+def install_proton(game_dir, cache_dir, dry_run, verbose, mode="hook"):
     bitness, dll_dir = detect_bitness(game_dir)
     if bitness is None:
         print("error: no steam_api.dll / steam_api64.dll found in the game "
               "directory - SmokeAPI cannot work here", file=sys.stderr)
         return 1
-    zip_path = download_smokeapi(cache_dir)
-    with zipfile.ZipFile(zip_path) as zf:
+
+    def copy_from_zip(zip_path, member, dst):
+        tmp = tempfile.mktemp(suffix=os.path.splitext(member)[1] or ".bin")
+        with zipfile.ZipFile(zip_path) as zf:
+            with open(tmp, "wb") as out:
+                out.write(zf.read(member))
+        shutil.copy2(tmp, dst)
+        os.remove(tmp)
+
+    # --- hook mode (default): the smoke_api dll IS the proxy dll -----------
+    if mode == "hook":
+        zip_path = download_smokeapi(cache_dir)
         dll_name = f"smoke_api{bitness}.dll"
-        if dll_name not in zf.namelist():
-            print(f"error: {dll_name} missing in SmokeAPI archive",
-                  file=sys.stderr)
-            return 1
-        # Hook mode: rename the dll so the game loads it as a system dll.
-        # 64-bit games -> version.dll, 32-bit -> winhttp.dll (avoids clashes
-        # when both are installed next to each other).
         target = "version.dll" if bitness == 64 else "winhttp.dll"
         if dry_run:
             print("Proton mode plan (hook mode, self-hook):")
             print(f"  extract {dll_name} -> {dll_dir}/{target}")
             print("  copy cream_api.ini -> " + game_dir)
             return 0
-        tmp = tempfile.mktemp(suffix=".dll")
-        with open(tmp, "wb") as out:
-            out.write(zf.read(dll_name))
-        shutil.copy2(tmp, os.path.join(dll_dir, target))
-        os.remove(tmp)
+        copy_from_zip(zip_path, dll_name, os.path.join(dll_dir, target))
+        print(f"Installed SmokeAPI ({bitness}-bit, hook mode) as {target}.")
+        print("No launch options needed - the DLL is loaded automatically.")
+        print("If the game does not load it, retry with "
+              "--smokeapi-mode koaloader or --smokeapi-mode proxy.")
+
+    # --- koaloader mode: Koaloader proxy injects smoke_api --------------
+    elif mode == "koaloader":
+        kzip = download_koaloader(cache_dir)
+        szip = download_smokeapi(cache_dir)
+        proxy_name = f"version-{bitness}/version.dll"
+        smoke_name = f"smoke_api{bitness}.dll"
+        target = "version.dll" if bitness == 64 else "winhttp.dll"
+        if dry_run:
+            print("Proton mode plan (koaloader mode):")
+            print(f"  extract {proxy_name} -> {dll_dir}/{target}")
+            print(f"  extract {smoke_name} -> {dll_dir}/{smoke_name}")
+            print("  copy cream_api.ini -> " + game_dir)
+            return 0
+        copy_from_zip(kzip, proxy_name, os.path.join(dll_dir, target))
+        copy_from_zip(szip, smoke_name, os.path.join(dll_dir, smoke_name))
+        print(f"Installed Koaloader ({bitness}-bit) as {target} + {smoke_name}.")
+        print("Koaloader auto-loads smoke_api from the same folder; survives "
+              "game updates better than hook mode.")
+
+    # --- proxy mode: replace steam_api(64).dll itself --------------------
+    elif mode == "proxy":
+        zip_path = download_smokeapi(cache_dir)
+        orig = f"steam_api{bitness}.dll"
+        backup = f"steam_api{bitness}_o.dll"
+        smoke_name = f"smoke_api{bitness}.dll"
+        if dry_run:
+            print("Proton mode plan (proxy mode):")
+            print(f"  rename {dll_dir}/{orig} -> {dll_dir}/{backup}")
+            print(f"  extract {smoke_name} -> {dll_dir}/{orig}")
+            print("  copy cream_api.ini -> " + game_dir)
+            return 0
+        orig_path = os.path.join(dll_dir, orig)
+        backup_path = os.path.join(dll_dir, backup)
+        if os.path.exists(backup_path):
+            print(f"{backup} already exists, keeping it")
+        elif os.path.exists(orig_path):
+            shutil.move(orig_path, backup_path)
+        else:
+            print(f"warning: {orig} not found in {dll_dir}", file=sys.stderr)
+        copy_from_zip(zip_path, smoke_name, orig_path)
+        print(f"Installed SmokeAPI ({bitness}-bit, proxy mode) as {orig} "
+              f"(original kept as {backup}).")
+        print("Most reliable loading, but reinstall after every game update.")
+
     # share the DLC list
     dist = find_creamlinux_dist()
     if dist:
@@ -177,10 +237,6 @@ def install_proton(game_dir, cache_dir, dry_run, verbose):
     else:
         print("warning: no local cream_api.ini found; copy one manually "
               "into the game folder", file=sys.stderr)
-    print(f"Installed SmokeAPI ({bitness}-bit, hook mode) as {target}.")
-    print("No launch options needed - the DLL is loaded automatically.")
-    print("If the game does not load it, try proxy mode (see "
-          "https://github.com/acidicoala/SmokeAPI) or rename to winmm.dll.")
     return 0
 
 
@@ -387,7 +443,8 @@ def cmd_install(args):
         return install_native(game["game_dir"], dist, args.dry_run, args.verbose)
     if game["game_type"] == "proton":
         cache = os.path.join(os.path.expanduser("~"), ".cache", "creamlinux")
-        return install_proton(game["game_dir"], cache, args.dry_run, args.verbose)
+        return install_proton(game["game_dir"], cache, args.dry_run,
+                              args.verbose, args.smokeapi_mode)
     print(f"error: {game['name']} has no Steam API files "
           "(libsteam_api.so / steam_api*.dll)", file=sys.stderr)
     return 1
@@ -401,6 +458,11 @@ def main():
     ap.add_argument("--dir", help="game installation directory")
     ap.add_argument("--mode", choices=["auto", "native", "proton"],
                     default="auto")
+    ap.add_argument("--smokeapi-mode", choices=["hook", "koaloader", "proxy"],
+                    default="hook",
+                    help="Proton install mode: hook (self-hook, default), "
+                         "koaloader (injector proxy) or proxy (replace "
+                         "steam_api dll)")
     ap.add_argument("--scan", action="store_true",
                     help="list installed Steam games and their unlocker status")
     ap.add_argument("--install", type=int, metavar="APPID",
@@ -473,7 +535,8 @@ def main():
 
     if mode == "proton":
         cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "creamlinux")
-        return install_proton(game_dir, cache_dir, args.dry_run, args.verbose)
+        return install_proton(game_dir, cache_dir, args.dry_run, args.verbose,
+                              args.smokeapi_mode)
 
     return 1
 

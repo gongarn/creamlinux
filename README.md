@@ -44,6 +44,10 @@ It auto-detects the game type:
   `cream_api.ini`; no launch options needed
 - `--scan` finds every installed Steam game (any library folder), shows
   native/Proton type and whether an unlocker is already installed
+- `--smokeapi-mode hook|koaloader|proxy` picks the Proton install method:
+  `hook` (default, the DLL itself acts as proxy), `koaloader` (injector proxy
+  that survives game updates) or `proxy` (replaces steam_api dll, most
+  reliable but needs reinstall after updates)
 - add `--update-dlc <appid>` to fetch a fresh DLC list first, `--dry-run` to preview
 
 If the script does not work for you, you can install `creamlinux` manually. Beware that you will have to manually update `cream_api.ini` to contain the DLC IDs for the games that you choose.
