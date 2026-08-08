@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>creamlinux — DLC Unlocker для Linux</title>
+<style>
+  :root { --bg:#1b2838; --bg2:#16202d; --panel:#2a3f5a; --text:#c7d5e0;
+          --dim:#8ba0b3; --accent:#66c0f4; --green:#a4d007; }
+  * { box-sizing: border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text);
+         font:16px/1.6 "Segoe UI",Roboto,Arial,sans-serif; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 40px 24px; }
+  h1 { color:var(--accent); font-size: 40px; margin-bottom: 8px; }
+  .sub { color:var(--dim); font-size: 18px; margin-bottom: 32px; }
+  .card { background:var(--panel); border-radius:10px; padding:22px 26px;
+          margin-bottom: 18px; }
+  h2 { color:var(--accent); font-size: 22px; margin-bottom: 12px; }
+  ul { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  code { background:var(--bg2); padding: 2px 7px; border-radius: 4px;
+         color: var(--green); font-size: 14px; }
+  a { color: var(--accent); }
+  .btn { display:inline-block; background:#1e6fa8; color:#fff; text-decoration:none;
+         padding:10px 20px; border-radius:6px; margin: 6px 8px 6px 0; }
+  .btn:hover { background:#2d89c8; }
+  .warn { color:#ffd75e; }
+  img.screen { width:100%; border-radius:8px; margin-top:10px; border:1px solid var(--panel); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🐨 creamlinux</h1>
+  <p class="sub">Разблокировка DLC в нативных Linux-играх Steam — обновлённый форк CreamAPI</p>
+
+  <div class="card">
+    <h2>Что это</h2>
+    <p>Инструмент заставляет игру считать, что все DLC установлены.
+       Файлы DLC должны лежать в папке игры — анлокер их не скачивает.
+       Работает с нативными Linux-играми (Proton/Wine — через SmokeAPI, см. инструменты).</p>
+  </div>
+
+  <div class="card">
+    <h2>Возможности</h2>
+    <ul>
+      <li>⚡ Режим «всё сразу» (<code>unlockall</code>) — без списков ID</li>
+      <li>🎮 Поддержка свежих версий Steam SDK (SteamApps v009, SteamUser v023, SteamClient v023)</li>
+      <li>🖥️ Веб-интерфейс: список игр, установка в один клик, живой лог</li>
+      <li>🔌 Единый установщик для native и Proton игр (SmokeAPI, режимы hook/koaloader/proxy)</li>
+      <li>🔄 Автообновление списков DLC из Steam Store и с апстрима</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Быстрый старт</h2>
+    <p>1. Скачай <a href="https://github.com/gongarn/creamlinux/releases/latest">релиз</a> и распакуй в папку игры,
+       либо запусти веб-интерфейс:</p>
+    <p><code>python3 tools/gui.py</code></p>
+    <p>2. В настройках запуска игры в Steam укажи:</p>
+    <p><code>sh ./cream.sh %command%</code></p>
+    <p class="warn">⚠️ Файлы DLC (например, папка <code>dlc</code>) нужны отдельно — анлокер не скачивает контент.</p>
+  </div>
+
+  <div class="card">
+    <h2>Ссылки</h2>
+    <a class="btn" href="https://github.com/gongarn/creamlinux">GitHub</a>
+    <a class="btn" href="https://github.com/gongarn/creamlinux/blob/master/README.md">README (EN)</a>
+    <a class="btn" href="https://github.com/gongarn/creamlinux/blob/master/README.ru.md">README (RU)</a>
+    <a class="btn" href="https://github.com/gongarn/creamlinux/releases/latest">Релизы</a>
+  </div>
+
+  <div class="card">
+    <h2>Скриншот веб-интерфейса</h2>
+    <img class="screen" src="screenshot.png" alt="creamlinux web UI">
+  </div>
+</div>
+</body>
+</html>
