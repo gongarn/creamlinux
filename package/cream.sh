@@ -25,9 +25,14 @@ fi
 LIBSTEAM_API_DIR=$(find . -name "libsteam_api.so" -printf "%h\n" | head -n 1)
 [ -z "$LIBSTEAM_API_DIR" ] && { echo "Error: libsteam_api.so not found."; exit 1; }
 if [ ! -z "$CREAM_CONFIG_PATH" ]; then
-    if [ ! -f "$CREAM_CONFIG_PATH/cream_api.ini" ]; then
-        echo "Error: cream_api.ini not found in CREAM_CONFIG_PATH."; exit 1;
+    # Accept both a path to the ini file and a directory containing cream_api.ini
+    if [ -d "$CREAM_CONFIG_PATH" ]; then
+        CREAM_CONFIG_PATH="$CREAM_CONFIG_PATH/cream_api.ini"
     fi
+    if [ ! -f "$CREAM_CONFIG_PATH" ]; then
+        echo "Error: cream_api.ini not found at CREAM_CONFIG_PATH ($CREAM_CONFIG_PATH)."; exit 1;
+    fi
+    export CREAM_CONFIG_PATH
 else
     if [ ! -f "$PWD/cream_api.ini" ]; then
         echo "Error: cream_api.ini not found in the current working directory."; exit 1;

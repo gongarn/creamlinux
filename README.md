@@ -114,7 +114,10 @@ If using neither, install `konsole` and follow the KDE step.
 Then launch the game (skip any launchers like the Paradox launcher if possible, they interfere with the logging). Wait for the game to load, close it, then copy and paste the contents of the terminal.
 
 # Advanced 
-If you want to load `cream_api.ini` from a specific path, specify the path with `CREAM_CONFIG_PATH` in the launch options.
+If you want to load `cream_api.ini` from a specific path, specify the path with `CREAM_CONFIG_PATH` in the launch options. Both a path to the ini file and a directory containing `cream_api.ini` are accepted, e.g.:
+```
+CREAM_CONFIG_PATH=/home/user/creamlinux-config sh ./cream.sh %command%
+```
 
 # Alternatives
 If creamlinux doesn't work for your game, there are a couple of known alternatives for Linux. I provide no guarantees for their legitimacy and functionality, but some people seem to be happy with them.
