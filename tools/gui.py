@@ -122,6 +122,7 @@ def api_games(handler):
     payload = [{
         "appid": g["appid"], "name": g["name"], "game_dir": g["game_dir"],
         "game_type": g["game_type"], "installed": g["installed"],
+        "dlc_status": g.get("dlc_status", "unknown"),
     } for g in sorted(games, key=lambda x: x["name"].lower())]
     json_response(handler, {"games": payload, "busy": JOBS.busy()})
 

@@ -411,6 +411,28 @@ TOOL_APPS = {  # Steam infrastructure, not games
 }
 
 
+def check_dlc_files(game_dir, game_type):
+    """Estimate whether the game's DLC content files are present.
+    Returns 'ok' / 'partial' / 'none' / 'unknown'.
+    Native games store DLC content in dlc/ (Paradox) or DLC/ folders;
+    for Proton games the layout is unpredictable -> 'unknown'."""
+    if game_type != "native":
+        return "unknown"
+    for folder in ("dlc", "DLC", "dlc_metadata"):
+        path = os.path.join(game_dir, folder)
+        if os.path.isdir(path):
+            try:
+                count = len([e for e in os.listdir(path)
+                             if not e.startswith(".")])
+            except OSError:
+                count = 0
+            if count >= 10:
+                return "ok"
+            if count > 0:
+                return "partial"
+    return "none"
+
+
 def scan_games():
     """Return list of dicts: appid, name, installdir, lib_path, game_dir,
     game_type ('native'/'proton'/None), installed ('creamlinux'/'smokeapi'/None)."""
@@ -450,7 +472,8 @@ def scan_games():
                         os.path.exists(os.path.join(game_dir, "winhttp.dll"))):
                     installed = "smokeapi"
             games.append({"appid": appid, "name": name, "game_dir": game_dir,
-                          "game_type": game_type, "installed": installed})
+                          "game_type": game_type, "installed": installed,
+                          "dlc_status": check_dlc_files(game_dir, game_type)})
     return games
 
 

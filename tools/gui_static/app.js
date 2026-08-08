@@ -27,6 +27,20 @@ function badge(type) {
   return `<span class="badge ${cls}">${label}</span>`;
 }
 
+const DLC_HINTS = {
+  ok: "Файлы DLC найдены",
+  partial: "Файлы DLC есть, но мало (проверь папку dlc)",
+  none: "Файлы DLC не найдены — скачай папку dlc отдельно!",
+  unknown: "Не проверяется (Proton)",
+};
+
+function dlcBadge(status) {
+  const labels = {ok: "✅ есть", partial: "⚠️ частично", none: "❌ нет",
+                  unknown: "—"};
+  const hint = DLC_HINTS[status] || "";
+  return `<span class="badge ${status}" title="${hint}">${labels[status] || status}</span>`;
+}
+
 function renderGames() {
   const q = $("#search").value.trim().toLowerCase();
   const ft = $("#filter-type").value;
@@ -61,7 +75,8 @@ function renderGames() {
       <td>${g.name}</td>
       <td class="muted">${g.appid}</td>
       <td>${badge(g.game_type)}</td>
-      <td>${badge(g.installed)}</td>`;
+      <td>${badge(g.installed)}</td>
+      <td>${dlcBadge(g.dlc_status)}</td>`;
     tr.appendChild(actions);
     tbody.appendChild(tr);
   });
