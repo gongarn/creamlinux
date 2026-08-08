@@ -26,11 +26,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Init and update submodules
-      run: |
-        git submodule init
-        git submodule update
-
     - name: Install gcc-multilib, g++-multilib
       run: sudo apt-get install -y gcc-multilib g++-multilib
 
