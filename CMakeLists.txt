@@ -13,9 +13,9 @@ link_directories(${CMAKE_SOURCE_DIR}/lib)
 INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR})
 
 ADD_LIBRARY(Creamlinux SHARED
-	${CMAKE_SOURCE_DIR}/main.cpp
-	# ${CMAKE_SOURCE_DIR}/ext/steam
-	# ${CMAKE_SOURCE_DIR}/Creamlinux_steamapps.cpp
+	${CMAKE_SOURCE_DIR}/src/config.cpp
+	${CMAKE_SOURCE_DIR}/src/steam_hooks.cpp
+	${CMAKE_SOURCE_DIR}/src/export_hooks.cpp
 )
 message("CMAKE_SIZEOF_VOID_P is ${CMAKE_SIZEOF_VOID_P}")
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
