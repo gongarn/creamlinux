@@ -3,6 +3,34 @@ A CreamAPI clone for Linux.
 
 Since 20PercentRendered has archived the repo, I have decided to fork and support it as far as I can.
 
+**Русская версия: [README.ru.md](README.ru.md)**
+
+## Our improvements over upstream
+This fork (gongarn/creamlinux) adds the following on top of anticitizn/creamlinux:
+
+- **Modern Steam SDK support** - SteamApps v009, SteamUser v022/v023, SteamClient
+  v021-v023 (upstream only hooked v008/v021/v017-019, so recent titles like CK3
+  showed no DLCs); the Steam headers were updated to SDK 1.65 with separate
+  vtable-correct wrappers per interface version
+- **Flat API hooks** (`SteamAPI_ISteamApps_*`, `SteamAPI_ISteamUser_*`) - fixes
+  Unity/Steamworks.NET titles (e.g. Dead Cells) that call the flat API directly;
+  also fixes a 32-bit stack bug in the old BGetDLCDataByIndex hook
+- **`unlockall = true`** - unlock every DLC the game knows about without any ID
+  list; the `[dlc]` section becomes optional
+- **`tools/update-dlc.py`** - auto-fetch DLC lists from the Steam Store API
+  (no more hunting for DLC ids by hand)
+- **`tools/setup.py`** - one-click installer: auto-detects native vs Proton
+  games, installs creamlinux or SmokeAPI (hook/koaloader/proxy modes),
+  `--scan`/`--install`/`--uninstall`, `--dry-run`
+- **Web UI** (`tools/gui.py`) - local web app: games table, install/uninstall,
+  ini editor, DLC updater with live log
+- **Reliability fixes** - cream.sh works from any working directory (#62),
+  MangoHud support (#51), preloads only the matching bitness (clean logs, #71),
+  `CREAM_CONFIG_PATH` accepts a file or a directory
+- **CI & quality** - modern workflows (auto weekly sync of `cream_api.ini`,
+  automated releases), unit tests wired into ctest, code split into modules
+  (src/), removed dead code
+
 ## Features
 - Unlocks DLCs listed in `cream_api.ini` for native Linux Steam games (no Proton/Wine support)
 - Supports modern Steam SDK interfaces: **ISteamApps v008/v009**, **SteamUser v020-v023**, **SteamClient v017-v023**
