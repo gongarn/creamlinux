@@ -41,6 +41,16 @@ If the script does not work for you, you can install `creamlinux` manually. Bewa
 
 The list of "supported" DLCs is stored in `cream_api.ini`. If you want to test creamlinux on a new game or a new DLC has just come out, you can add more entries here manually.
 
+### Adding a new game (DLC auto-fetch)
+Instead of hunting for DLC ids by hand, use the bundled helper:
+```
+python3 tools/update-dlc.py 394360 --output package/cream_api.ini
+```
+It queries the Steam Store API for the game's DLC list, fetches the names and
+merges them into the `[dlc]` section - existing entries and comments are kept.
+Use `--dry-run` to preview the diff first, `--refresh-names` to update names
+of already-known ids, and pass several appids to process multiple games.
+
 If that doesn't work, please check the Troubleshooting section below.
 
 ## Building from source
