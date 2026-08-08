@@ -26,6 +26,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Fix apt mirrors (workaround for mirror+file 404s on i386 packages)
+      run: |
+        sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt|http://azure.archive.ubuntu.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
+        sudo apt-get update
+
     - name: Install gcc-multilib, g++-multilib
       run: sudo apt-get install -y gcc-multilib g++-multilib
 
