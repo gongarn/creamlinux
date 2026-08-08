@@ -26,6 +26,14 @@ elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
     set(CMAKE_SHARED_LIBRARY_PREFIX "lib32")
 endif()
 
+# --- tests -----------------------------------------------------------------
+enable_testing()
+ADD_EXECUTABLE(creamlinux_tests
+    ${CMAKE_SOURCE_DIR}/tests/test_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/config.cpp
+)
+add_test(NAME config COMMAND creamlinux_tests)
+
 add_custom_command(
         TARGET Creamlinux POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory

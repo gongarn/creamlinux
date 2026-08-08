@@ -238,13 +238,8 @@ extern "C" bool SteamAPI_Init()
     auto env = std::getenv("CREAM_CONFIG_PATH");
     //f env exists, use it
     if (env != NULL) {
-        creaminipath = env;
         // Accept both a path to the ini file and a directory containing cream_api.ini
-        struct stat st;
-        if (stat(creaminipath.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
-            creaminipath += "/cream_api.ini";
-            spdlog::info("CREAM_CONFIG_PATH is a directory, using {}", creaminipath);
-        }
+        creaminipath = resolve_config_path(env);
     }
 
     load_config(creaminipath);

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <string>
+#include <sys/stat.h>
 
 #include "spdlog/spdlog.h"
 
@@ -28,4 +29,12 @@ void load_config(const std::string& creaminipath) {
         dlcs.push_back(dlctuple);
         spdlog::info("Added dlc with id: {0}, name: {1}", entry.first, entry.second);
     }
+}
+
+std::string resolve_config_path(const std::string& path) {
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+        return path + "/cream_api.ini";
+    }
+    return path;
 }
