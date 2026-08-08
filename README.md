@@ -66,6 +66,9 @@ Set `unlockall = true` in the `[config]` section of `cream_api.ini` and every DL
 the game knows about is treated as installed - the `[dlc]` list is not needed
 (though it is still useful when you want to control exactly which DLCs show up).
 
+Set `logging = false` in `[config]` to silence creamlinux log output (it logs
+to stderr by default).
+
 ### Adding a new game (DLC auto-fetch)
 Instead of hunting for DLC ids by hand, use the bundled helper:
 ```

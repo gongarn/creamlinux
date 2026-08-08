@@ -257,6 +257,10 @@ extern "C" bool SteamAPI_Init()
     }
 
     load_config(creaminipath);
+    // [config] logging = false silences all spdlog output (stderr)
+    if (ini["config"]["logging"] == "false") {
+        spdlog::set_level(spdlog::level::off);
+    }
     spdlog::info("SteamAPI_Init called in PID {0}", getpid());
 
     // finish api call

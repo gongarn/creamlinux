@@ -46,7 +46,17 @@ copy_file "$PWD/lib32Creamlinux.so" /tmp/lib32Creamlinux.so
 copy_file "$PWD/lib64Creamlinux.so" /tmp/lib64Creamlinux.so
 copy_file "$LIBSTEAM_API_DIR/libsteam_api.so" /tmp/libsteam_api.so
 
-LD_PRELOAD="$LD_PRELOAD /tmp/lib64Creamlinux.so /tmp/lib32Creamlinux.so /tmp/libsteam_api.so" "$@"
+# Preload only the creamlinux library matching the game's bitness; ld.so would
+# otherwise log 'wrong ELF class' noise for the other one (issue #71).
+# ELF class byte at offset 4: 01 = 32-bit (ELFCLASS32), 02 = 64-bit (ELFCLASS64).
+ELF_CLASS=$(od -An -t x1 -j 4 -N 1 /tmp/libsteam_api.so 2>/dev/null | tr -d ' \n')
+case "$ELF_CLASS" in
+    01) PRELOAD_LIBS="/tmp/lib32Creamlinux.so" ;;
+    02) PRELOAD_LIBS="/tmp/lib64Creamlinux.so" ;;
+    *)  PRELOAD_LIBS="/tmp/lib64Creamlinux.so /tmp/lib32Creamlinux.so" ;; # unknown: both
+esac
+
+LD_PRELOAD="$LD_PRELOAD $PRELOAD_LIBS /tmp/libsteam_api.so" "$@"
 EXITCODE=$?
 rm -f /tmp/lib32Creamlinux.so /tmp/lib64Creamlinux.so /tmp/libsteam_api.so
 exit $EXITCODE
