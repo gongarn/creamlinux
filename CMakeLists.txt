@@ -34,6 +34,12 @@ ADD_EXECUTABLE(creamlinux_tests
 )
 add_test(NAME config COMMAND creamlinux_tests)
 
+ADD_EXECUTABLE(creamlinux_vtable_test
+    ${CMAKE_SOURCE_DIR}/tests/test_vtable.cpp
+    ${CMAKE_SOURCE_DIR}/src/config.cpp
+)
+add_test(NAME vtable COMMAND creamlinux_vtable_test)
+
 add_custom_command(
         TARGET Creamlinux POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
