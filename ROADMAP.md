@@ -22,15 +22,20 @@ plus a single install tool covering both native and Proton titles.
 | 13 | cream.sh bitness check | preload only the matching lib32/lib64, clean logs (#71) | CreamAPI |
 | 14 | logging = false | [config] flag silences spdlog output | CreamAPI |
 | 15 | Web UI | tools/gui.py: local web app (games table, install/uninstall, config editor, DLC updater, live log); creamlib.py shared core; setup.py CLI regression-tested | - |
+| 16 | Release v2.3.1 | CI-created release with creamlinux.zip (gh release, contents:write fix) |
+| 17 | GUI: DLC-file status column | ok/partial/none/unknown per game with tooltips |
+| 18 | GUI: multi-select batch install/uninstall | appids arrays, per-game log headers |
+| 19 | Python unit tests (12) + CI step | creamlib: VDF, scan, install/uninstall, ini |
+| 20 | vtable layout test | wrapper overrides checked against base slots (Itanium ABI) |
+| 21 | ContextInit hook + opt-in SteamClient() | dlvsym deliberately not interposed (bootstrap recursion) |
+| 22 | GitHub Pages landing | gongarn.github.io/creamlinux |
+
 ## 📋 Backlog
 
-- Hooks for new init paths: SteamInternal_ContextInit, dlvsym, SteamClient()
-  accessor behind an ini flag (disabled due to PAYDAY 2)
-- Release v2.3.0 with zip artifact (CI ready; setup.py can then download it)
-- Real-game testing: **HOI4 confirmed working** (native, unlockall,
-  installed via web UI); still to verify: CK3 (#71), Dead Cells (#29),
-  MangoHud (#51), Proton path (SmokeAPI)
-- PR back to anticitizn/creamlinux (interface fixes)
+- PR to upstream: cream.sh fixes (opened: anticitizn/creamlinux#75);
+  interface-fixes PR needs adaptation to upstream's main.cpp layout
+- Real-game testing: CK3 (#71), Dead Cells (#29), MangoHud (#51),
+  Proton path (SmokeAPI) - HOI4 already confirmed working
 - README: tested-games table from issues
 - Uplay/Epic support - intentionally out of scope (Steam only)
 
