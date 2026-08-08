@@ -30,7 +30,13 @@ using namespace std;
 
 void* (*real_dlsym)(void *handle, const char *name);
 
-//TODO: hook dlvsym as well
+// NOTE: we deliberately do NOT interpose dlvsym(). ensure_realdlsym()
+// resolves the real dlsym via dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.2.5");
+// interposing dlvsym would make that bootstrap call recurse into our own
+// hook before real_dlsym exists. Games/libraries resolve SteamAPI symbols
+// through dlsym() in practice, so the dlsym hook covers the real cases.
+
+//TODO: hook dlvsym as well (would need a bootstrap-safe resolver)
 void ensure_realdlsym() {
     if (real_dlsym == NULL) {
         *(void **)(&real_dlsym) = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.2.5");
@@ -206,6 +212,35 @@ extern "C" void* S_CALLTYPE SteamInternal_CreateInterface(const char *pszVersion
 // for older games
 // NOTE: the v009/v023 headers define inline accessors with these names; we export our
 // own symbols instead so old binaries that link SteamApps()/SteamUser() directly get hooked.
+// The SteamClient() accessor is opt-in via [methods] hook_steamclient_accessor = true
+// because hooking it historically broke PAYDAY 2 (Paradox launcher 'Not owned').
+extern "C" ISteamClient *S_CALLTYPE SteamClient() {
+    ensure_realdlsym();
+    spdlog::info("SteamClient() called");
+    void* S_CALLTYPE (*real)();
+    *(void**)(&real) = real_dlsym(RTLD_NEXT, "SteamClient");
+    ISteamClient* val = (ISteamClient*)real();
+    if (ini["methods"]["hook_steamclient_accessor"] == "true") {
+        spdlog::info("SteamClient() hooked (hook_steamclient_accessor=true)");
+        return Hookey_SteamClient23(val);
+    }
+    return val;
+}
+
+// Newer SDKs create interfaces through SteamInternal_ContextInit; hook it so
+// games that resolve it via dlsym get a consistent path. The real call is
+// delegated unchanged - FindOrCreateUserInterface is already hooked.
+extern "C" void* S_CALLTYPE SteamInternal_ContextInit(void *pContextInitData) {
+    ensure_realdlsym();
+    void* S_CALLTYPE (*real)(void *pContextInitData);
+    *(void**)(&real) = real_dlsym(RTLD_NEXT, "SteamInternal_ContextInit");
+    spdlog::info("SteamInternal_ContextInit called");
+    return real(pContextInitData);
+}
+
+// for older games
+// NOTE: the v009/v023 headers define inline accessors with these names; we export our
+// own symbols instead so old binaries that link SteamApps()/SteamUser() directly get hooked.
 extern "C" ISteamApps *S_CALLTYPE SteamApps() {
     ensure_realdlsym();
     spdlog::info("SteamApps() called");
@@ -230,10 +265,6 @@ extern "C" ISteamUser *S_CALLTYPE SteamUser() {
     // legacy accessor: games on old SDKs expect the SteamUser020/021 vtable
     return (ISteamUser*)Hookey_SteamUser21((ISteamUser021*)val);
 }
-
-// TODO: SteamClient() accessor hook is intentionally disabled: hooking it broke
-// PAYDAY 2 (Paradox launcher shows 'Not owned'). Revisit once the wrappers can
-// dispatch on the requested SDK version.
 
 // Used by SteamAPI_Init() to list loaded libraries when dlsym resolution fails.
 static int printdliter(struct dl_phdr_info *info, size_t size, void *data) {
@@ -302,6 +333,10 @@ extern "C" void *dlsym(void *handle, const char *name)
         spdlog::info("returning custom impl for {0}", name);
         spdlog::info("custom: {0}, real: {1}", (void *)SteamInternal_CreateInterface, real_dlsym(RTLD_NEXT, "SteamInternal_CreateInterface"));
         return (void *)SteamInternal_CreateInterface;
+    }
+    if (!strcmp(name, "SteamInternal_ContextInit") && handle != RTLD_NEXT) {
+        spdlog::info("returning custom impl for {0}", name);
+        return (void *)SteamInternal_ContextInit;
     }
     // enabling this makes some games (golf with your friends) start calling non-existing functions
     //TODO: add a setting to let users use this as a hooking method
