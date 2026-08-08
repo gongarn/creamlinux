@@ -30,6 +30,18 @@ The following games have been tested and do not currently work with creamlinux, 
 The easiest way of installing is using **Tickbase**'s Application: https://github.com/Novattz/creamlinux-installer
 It automatically downloads and sets up creamlinux for Steam games that you choose, as well as fetching all DLC IDs for it. Keep in mind that you will still need the actual, **up-to-date** DLC files in the game. The install script and creamlinux do **not** automatically download any game content. You will have to run it again if new DLCs are released for a game.
 
+Alternatively, use the bundled setup helper (Python 3, no dependencies):
+```
+python3 tools/setup.py --dir /path/to/game
+```
+It auto-detects the game type:
+- **native Linux game** -> installs creamlinux (files are taken from your local
+  build or the latest release) and prints the launch options
+- **Windows game in Proton** -> installs [SmokeAPI](https://github.com/acidicoala/SmokeAPI)
+  (the Windows-side DLC unlocker) into the game folder plus the shared
+  `cream_api.ini`; no launch options needed
+- add `--update-dlc <appid>` to fetch a fresh DLC list first, `--dry-run` to preview
+
 If the script does not work for you, you can install `creamlinux` manually. Beware that you will have to manually update `cream_api.ini` to contain the DLC IDs for the games that you choose.
 
 ## Manual Installation
