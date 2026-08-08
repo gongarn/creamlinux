@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-setup.py - install DLC unlockers into a game folder.
+setup.py - install DLC unlockers into a game folder (CLI).
 
 One tool for both cases:
   * native Linux games      -> creamlinux  (LD_PRELOAD hooks)
@@ -12,404 +12,28 @@ Usage:
   python3 tools/setup.py --dir /path/to/game                  # auto-detect mode
   python3 tools/setup.py --dir /path/to/game --mode native
   python3 tools/setup.py --dir /path/to/game --mode proton
-  python3 tools/setup.py --dir /path/to/game --update-dlc 394360
-  python3 tools/setup.py --dir /path/to/game --dry-run        # preview only
+  python3 tools/setup.py --dir /path/to/game --smokeapi-mode koaloader
   python3 tools/setup.py --scan                               # list installed Steam games
   python3 tools/setup.py --install 394360                     # install unlocker for an appid
+  python3 tools/setup.py --install 394360 --dry-run           # preview only
 
-Notes:
-  - For native mode, creamlinux files are taken from the local checkout
-    (build output or the repo package/ folder) or, if missing, downloaded
-    from the latest GitHub release of this fork.
-  - SmokeAPI limitations (anti-cheat, Denuvo SecureDLC, 3rd party DRM)
-    apply; see https://github.com/acidicoala/SmokeAPI for details.
+All logic lives in creamlib.py (shared with gui.py).
 """
 
 import argparse
-import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.request
 import zipfile
 
-USER_AGENT = "creamlinux-setup/1.0"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-SMOKEAPI_REPO = "acidicoala/SmokeAPI"
-KOALOADER_REPO = "acidicoala/Koaloader"
-CREAMLINUX_REPO = "gongarn/creamlinux"
-
-CREAM_FILES = ["lib64Creamlinux.so", "lib32Creamlinux.so", "cream.sh",
-               "cream_api.ini"]
-
-
-# ------------------------------------------------------------------ http ---
-
-def http_get(url, timeout=60):
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
-
-
-def latest_release_asset(repo):
-    """Return (asset_name, browser_download_url) of the latest release."""
-    data = json.loads(http_get(f"https://api.github.com/repos/{repo}/releases/latest"))
-    assets = data.get("assets") or []
-    if not assets:
-        raise RuntimeError(f"repo {repo} has no release assets")
-    asset = assets[0]
-    return asset["name"], asset["browser_download_url"]
-
-
-# -------------------------------------------------------------- detection --
-
-def detect_mode(game_dir):
-    found_type, _ = find_steam_api_files(game_dir)
-    return found_type
-
-
-def detect_bitness(game_dir):
-    """Return (bitness, dll_dir) or (None, None). dll_dir is where the
-    Steam API dll lives - the proxy dll must be placed next to it (i.e.
-    next to the game executable)."""
-    found_type, api_path = find_steam_api_files(game_dir)
-    if found_type != "proton" or api_path is None:
-        return None, None
-    dll_dir = os.path.dirname(api_path)
-    if os.path.basename(api_path) == "steam_api64.dll":
-        return 64, dll_dir
-    return 32, dll_dir
-
-
-# --------------------------------------------------------------- native ----
-
-def find_creamlinux_dist():
-    """Locate a local creamlinux distribution (built checkout or release zip
-    next to the script). Returns a temp dir with the files or None."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    repo_root = os.path.dirname(here)
-    candidates = [
-        os.path.join(repo_root, "output"),              # after build.sh
-        os.path.join(repo_root, "build", "64", "lib"),  # cmake build dir
-        here,                                            # files next to script
-    ]
-    for cand in candidates:
-        if all(os.path.exists(os.path.join(cand, f)) for f in CREAM_FILES):
-            return cand
-    return None
-
-
-def install_native(game_dir, dist_dir, dry_run, verbose):
-    plan = []
-    for f in CREAM_FILES:
-        plan.append(("copy", os.path.join(dist_dir, f),
-                     os.path.join(game_dir, f)))
-    if dry_run:
-        print("Native mode plan:")
-        for _, src, dst in plan:
-            print(f"  cp {src} -> {dst}")
-        return 0
-    for _, src, dst in plan:
-        if verbose:
-            print(f"copying {src} -> {dst}")
-        shutil.copy2(src, dst)
-    print("Installed creamlinux. Set the game's Steam launch options to:")
-    print("  sh ./cream.sh %command%")
-    print("(with MangoHud:  sh ./cream.sh mangohud %command%)")
-    return 0
-
-
-# --------------------------------------------------------------- proton ----
-
-def download_smokeapi(cache_dir):
-    zip_path = os.path.join(cache_dir, "smokeapi-latest.zip")
-    if os.path.exists(zip_path):
-        print(f"Using cached SmokeAPI: {zip_path}")
-        return zip_path
-    os.makedirs(cache_dir, exist_ok=True)
-    print("Downloading SmokeAPI...")
-    name, url = latest_release_asset(SMOKEAPI_REPO)
-    data = http_get(url)
-    with open(zip_path, "wb") as fh:
-        fh.write(data)
-    print(f"  saved {name} ({len(data)} bytes)")
-    return zip_path
-
-
-def download_koaloader(cache_dir):
-    zip_path = os.path.join(cache_dir, "koaloader-latest.zip")
-    if os.path.exists(zip_path):
-        print(f"Using cached Koaloader: {zip_path}")
-        return zip_path
-    os.makedirs(cache_dir, exist_ok=True)
-    print("Downloading Koaloader...")
-    name, url = latest_release_asset(KOALOADER_REPO)
-    data = http_get(url)
-    with open(zip_path, "wb") as fh:
-        fh.write(data)
-    print(f"  saved {name} ({len(data)} bytes)")
-    return zip_path
-
-
-def install_proton(game_dir, cache_dir, dry_run, verbose, mode="hook"):
-    bitness, dll_dir = detect_bitness(game_dir)
-    if bitness is None:
-        print("error: no steam_api.dll / steam_api64.dll found in the game "
-              "directory - SmokeAPI cannot work here", file=sys.stderr)
-        return 1
-
-    def copy_from_zip(zip_path, member, dst):
-        tmp = tempfile.mktemp(suffix=os.path.splitext(member)[1] or ".bin")
-        with zipfile.ZipFile(zip_path) as zf:
-            with open(tmp, "wb") as out:
-                out.write(zf.read(member))
-        shutil.copy2(tmp, dst)
-        os.remove(tmp)
-
-    # --- hook mode (default): the smoke_api dll IS the proxy dll -----------
-    if mode == "hook":
-        zip_path = download_smokeapi(cache_dir)
-        dll_name = f"smoke_api{bitness}.dll"
-        target = "version.dll" if bitness == 64 else "winhttp.dll"
-        if dry_run:
-            print("Proton mode plan (hook mode, self-hook):")
-            print(f"  extract {dll_name} -> {dll_dir}/{target}")
-            print("  copy cream_api.ini -> " + game_dir)
-            return 0
-        copy_from_zip(zip_path, dll_name, os.path.join(dll_dir, target))
-        print(f"Installed SmokeAPI ({bitness}-bit, hook mode) as {target}.")
-        print("No launch options needed - the DLL is loaded automatically.")
-        print("If the game does not load it, retry with "
-              "--smokeapi-mode koaloader or --smokeapi-mode proxy.")
-
-    # --- koaloader mode: Koaloader proxy injects smoke_api --------------
-    elif mode == "koaloader":
-        kzip = download_koaloader(cache_dir)
-        szip = download_smokeapi(cache_dir)
-        proxy_name = f"version-{bitness}/version.dll"
-        smoke_name = f"smoke_api{bitness}.dll"
-        target = "version.dll" if bitness == 64 else "winhttp.dll"
-        if dry_run:
-            print("Proton mode plan (koaloader mode):")
-            print(f"  extract {proxy_name} -> {dll_dir}/{target}")
-            print(f"  extract {smoke_name} -> {dll_dir}/{smoke_name}")
-            print("  copy cream_api.ini -> " + game_dir)
-            return 0
-        copy_from_zip(kzip, proxy_name, os.path.join(dll_dir, target))
-        copy_from_zip(szip, smoke_name, os.path.join(dll_dir, smoke_name))
-        print(f"Installed Koaloader ({bitness}-bit) as {target} + {smoke_name}.")
-        print("Koaloader auto-loads smoke_api from the same folder; survives "
-              "game updates better than hook mode.")
-
-    # --- proxy mode: replace steam_api(64).dll itself --------------------
-    elif mode == "proxy":
-        zip_path = download_smokeapi(cache_dir)
-        orig = f"steam_api{bitness}.dll"
-        backup = f"steam_api{bitness}_o.dll"
-        smoke_name = f"smoke_api{bitness}.dll"
-        if dry_run:
-            print("Proton mode plan (proxy mode):")
-            print(f"  rename {dll_dir}/{orig} -> {dll_dir}/{backup}")
-            print(f"  extract {smoke_name} -> {dll_dir}/{orig}")
-            print("  copy cream_api.ini -> " + game_dir)
-            return 0
-        orig_path = os.path.join(dll_dir, orig)
-        backup_path = os.path.join(dll_dir, backup)
-        if os.path.exists(backup_path):
-            print(f"{backup} already exists, keeping it")
-        elif os.path.exists(orig_path):
-            shutil.move(orig_path, backup_path)
-        else:
-            print(f"warning: {orig} not found in {dll_dir}", file=sys.stderr)
-        copy_from_zip(zip_path, smoke_name, orig_path)
-        print(f"Installed SmokeAPI ({bitness}-bit, proxy mode) as {orig} "
-              f"(original kept as {backup}).")
-        print("Most reliable loading, but reinstall after every game update.")
-
-    # share the DLC list
-    dist = find_creamlinux_dist()
-    if dist:
-        shutil.copy2(os.path.join(dist, "cream_api.ini"),
-                     os.path.join(game_dir, "cream_api.ini"))
-        print(f"copied cream_api.ini (from {dist})")
-    else:
-        print("warning: no local cream_api.ini found; copy one manually "
-              "into the game folder", file=sys.stderr)
-    return 0
-
-
-# ----------------------------------------------------------------- scan ----
-# Minimal VDF parser: "key" "value" pairs and "key" { ... } blocks.
-
-def parse_vdf(text):
-    tokens = []
-    i = 0
-    while i < len(text):
-        ch = text[i]
-        if ch in ' \t\r\n':
-            i += 1
-        elif ch == '"':
-            j = text.index('"', i + 1)
-            tokens.append(text[i + 1:j])
-            i = j + 1
-        elif ch == '{':
-            tokens.append("{")
-            i += 1
-        elif ch == '}':
-            tokens.append("}")
-            i += 1
-        else:
-            i += 1
-    return tokens
-
-
-def vdf_to_dict(tokens):
-    """Tokens -> nested dict; repeated keys become lists."""
-    def parse(pos):
-        result = {}
-        while pos < len(tokens):
-            key = tokens[pos]
-            if key == "}":
-                return result, pos + 1
-            if pos + 1 >= len(tokens):
-                break
-            nxt = tokens[pos + 1]
-            if nxt == "{":
-                value, pos = parse(pos + 2)
-            else:
-                value = nxt
-                pos += 2
-            if key in result:
-                if not isinstance(result[key], list):
-                    result[key] = [result[key]]
-                result[key].append(value)
-            else:
-                result[key] = value
-        return result, pos
-
-    result, _ = parse(0)
-    return result
-
-
-def find_steam_library_roots():
-    """Locate steamapps/libraryfolders.vdf across known install locations."""
-    candidates = []
-    home = os.path.expanduser("~")
-    for p in (os.path.join(home, ".steam", "steam"),
-              os.path.join(home, ".local", "share", "Steam"),
-              os.path.join(home, ".steam", "root")):
-        if os.path.isdir(p) and p not in candidates:
-            candidates.append(p)
-    vdfs = [os.path.join(p, "steamapps", "libraryfolders.vdf")
-            for p in candidates]
-    vdfs = [v for v in vdfs if os.path.exists(v)]
-    return vdfs
-
-
-def steam_libraries():
-    """Yield (library_path, steamapps_dir) for every Steam library folder."""
-    seen = set()
-    for vdf in find_steam_library_roots():
-        try:
-            with open(vdf, "r", encoding="utf-8", errors="replace") as fh:
-                data = vdf_to_dict(parse_vdf(fh.read()))
-        except Exception:  # noqa: BLE001
-            continue
-        folders = data.get("libraryfolders", {})
-        if isinstance(folders, dict):
-            for entry in folders.values():
-                if isinstance(entry, dict) and entry.get("path"):
-                    steamapps = os.path.join(entry["path"], "steamapps")
-                    if os.path.isdir(steamapps) and steamapps not in seen:
-                        seen.add(steamapps)
-                        yield entry["path"], steamapps
-        # legacy flat format: "0" "path"
-        if isinstance(folders, dict):
-            for value in folders.values():
-                if isinstance(value, str) and os.path.isdir(value):
-                    steamapps = os.path.join(value, "steamapps")
-                    if os.path.isdir(steamapps) and steamapps not in seen:
-                        seen.add(steamapps)
-                        yield value, steamapps
-
-
-TOOL_APPS = {  # Steam infrastructure, not games
-    "1070560": "Steam Linux Runtime 1.0 (scout)",
-    "1391110": "Steam Linux Runtime 3.0 (sniper)",
-    "1628350": "Steam Linux Runtime 4.0 (soldier)",
-    "1493710": "Steam Linux Runtime 5.0 (soldier)",
-    "4183110": "Steam Linux Runtime 4.0",
-    "228980": "Steamworks Common Redistributables",
-    "2805730": "Proton Experimental",
-}
-
-
-def find_steam_api_files(game_dir, max_depth=3):
-    """Find libsteam_api.so / steam_api*.dll inside a game folder.
-    Returns ('native', path) or ('proton', path) or (None, None)."""
-    root_depth = game_dir.rstrip(os.sep).count(os.sep)
-    for dirpath, dirnames, filenames in os.walk(game_dir):
-        depth = dirpath.rstrip(os.sep).count(os.sep) - root_depth
-        if depth >= max_depth:
-            dirnames[:] = []
-            continue
-        for fname in filenames:
-            if fname == "libsteam_api.so":
-                return "native", os.path.join(dirpath, fname)
-            if fname in ("steam_api.dll", "steam_api64.dll"):
-                return "proton", os.path.join(dirpath, fname)
-        if depth >= max_depth - 1:
-            dirnames[:] = []
-    return None, None
-
-
-def scan_games():
-    """Return list of dicts: appid, name, installdir, lib_path, game_dir,
-    game_type ('native'/'proton'/None), installed ('creamlinux'/'smokeapi'/None)."""
-    games = []
-    for lib_path, steamapps in steam_libraries():
-        for acf in sorted(os.listdir(steamapps)):
-            if not (acf.startswith("appmanifest_") and acf.endswith(".acf")):
-                continue
-            appid = acf[len("appmanifest_"):-len(".acf")]
-            if appid in TOOL_APPS:
-                continue
-            try:
-                with open(os.path.join(steamapps, acf), "r",
-                          encoding="utf-8", errors="replace") as fh:
-                    data = vdf_to_dict(parse_vdf(fh.read()))
-                state = data.get("AppState", {})
-            except Exception:  # noqa: BLE001
-                continue
-            name = state.get("name", "?")
-            installdir = state.get("installdir", "")
-            if not installdir:
-                continue
-            game_dir = os.path.join(lib_path, "steamapps", "common", installdir)
-            if not os.path.isdir(game_dir):
-                continue
-            game_type = None
-            installed = None
-            found_type, api_path = find_steam_api_files(game_dir)
-            if found_type == "native":
-                game_type = "native"
-                if (os.path.exists(os.path.join(game_dir, "cream.sh")) and
-                        os.path.exists(os.path.join(game_dir, "cream_api.ini"))):
-                    installed = "creamlinux"
-            elif found_type == "proton":
-                game_type = "proton"
-                if (os.path.exists(os.path.join(game_dir, "version.dll")) or
-                        os.path.exists(os.path.join(game_dir, "winhttp.dll"))):
-                    installed = "smokeapi"
-            games.append({"appid": appid, "name": name, "game_dir": game_dir,
-                          "game_type": game_type, "installed": installed})
-    return games
+import creamlib  # noqa: E402
 
 
 def cmd_scan(args):
-    games = scan_games()
+    games = creamlib.scan_games()
     if not games:
         print("No Steam games found (checked libraryfolders.vdf in "
               "~/.steam, ~/.local/share/Steam).")
@@ -425,36 +49,51 @@ def cmd_scan(args):
 
 
 def cmd_install(args):
-    games = scan_games()
-    match = [g for g in games if g["appid"] == str(args.install)]
-    if not match:
+    game = creamlib.find_game(args.install)
+    if not game:
         print(f"error: app {args.install} not found in Steam libraries",
               file=sys.stderr)
         return 1
-    game = match[0]
     print(f"Installing unlocker for {game['name']} "
           f"({game['game_type']}, {game['game_dir']})")
     if game["game_type"] == "native":
-        dist = find_creamlinux_dist()
+        dist = creamlib.find_creamlinux_dist()
         if dist is None:
             print("error: no local creamlinux build found; run 'sh ./build.sh' "
                   "first or pass --dir with a prebuilt dist", file=sys.stderr)
             return 1
-        return install_native(game["game_dir"], dist, args.dry_run, args.verbose)
+        return creamlib.install_native(game["game_dir"], dist,
+                                       args.dry_run, args.verbose)
     if game["game_type"] == "proton":
-        cache = os.path.join(os.path.expanduser("~"), ".cache", "creamlinux")
-        return install_proton(game["game_dir"], cache, args.dry_run,
-                              args.verbose, args.smokeapi_mode)
+        return creamlib.install_proton(game["game_dir"], dry_run=args.dry_run,
+                                       verbose=args.verbose,
+                                       mode=args.smokeapi_mode)
     print(f"error: {game['name']} has no Steam API files "
           "(libsteam_api.so / steam_api*.dll)", file=sys.stderr)
     return 1
 
 
-# ----------------------------------------------------------------- main ----
+def cmd_uninstall(args):
+    game = creamlib.find_game(args.install)
+    if not game:
+        print(f"error: app {args.install} not found in Steam libraries",
+              file=sys.stderr)
+        return 1
+    print(f"Removing unlocker from {game['name']} ({game['game_dir']})")
+    if game["game_type"] == "native":
+        return creamlib.uninstall_native(game["game_dir"],
+                                         remove_ini=not args.keep_ini)
+    if game["game_type"] == "proton":
+        return creamlib.uninstall_proton(game["game_dir"],
+                                         remove_ini=not args.keep_ini)
+    print("Nothing to uninstall.")
+    return 0
+
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description="Install/remove DLC unlockers for Steam games",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dir", help="game installation directory")
     ap.add_argument("--mode", choices=["auto", "native", "proton"],
                     default="auto")
@@ -467,8 +106,12 @@ def main():
                     help="list installed Steam games and their unlocker status")
     ap.add_argument("--install", type=int, metavar="APPID",
                     help="install the unlocker for an installed Steam game")
+    ap.add_argument("--uninstall", type=int, metavar="APPID",
+                    help="remove the unlocker from an installed Steam game")
+    ap.add_argument("--keep-ini", action="store_true",
+                    help="keep cream_api.ini when uninstalling")
     ap.add_argument("--update-dlc", type=int, metavar="APPID",
-                    help="run tools/update-dlc.py for this app first")
+                    help="refresh cream_api.ini DLC list for an appid")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the plan without changing anything")
     ap.add_argument("--verbose", action="store_true")
@@ -478,8 +121,15 @@ def main():
         return cmd_scan(args)
     if args.install is not None:
         return cmd_install(args)
+    if args.uninstall is not None:
+        return cmd_uninstall(args)
+    if args.update_dlc is not None:
+        return creamlib.run_dlc_update(args.update_dlc,
+                                       dry_run=args.dry_run,
+                                       log=print)
     if not args.dir:
-        ap.error("one of --dir, --scan or --install is required")
+        ap.error("one of --dir, --scan, --install, --uninstall or "
+                 "--update-dlc is required")
 
     game_dir = os.path.abspath(args.dir)
     if not os.path.isdir(game_dir):
@@ -488,23 +138,15 @@ def main():
 
     # optional: refresh the DLC list first
     if args.update_dlc:
-        script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                              "update-dlc.py")
-        if not os.path.exists(script):
-            print(f"error: {script} not found", file=sys.stderr)
-            return 1
-        cmd = [sys.executable, script, str(args.update_dlc)]
-        if args.dry_run:
-            cmd.append("--dry-run")
-        if args.verbose:
-            cmd.append("--verbose")
-        print(f"Running: {' '.join(cmd)}")
-        subprocess.run(cmd, check=True)
+        rc = creamlib.run_dlc_update(args.update_dlc, dry_run=args.dry_run,
+                                     log=print)
+        if rc != 0:
+            return rc
 
     # mode detection
     mode = args.mode
     if mode == "auto":
-        mode = detect_mode(game_dir)
+        mode = creamlib.detect_mode(game_dir)
         if mode is None:
             print("error: cannot detect game type - no libsteam_api.so "
                   "(native) nor steam_api*.dll (Proton) found in "
@@ -513,16 +155,16 @@ def main():
         print(f"Auto-detected mode: {mode}")
 
     if mode == "native":
-        dist = find_creamlinux_dist()
+        dist = creamlib.find_creamlinux_dist()
         if dist is None:
             # try the latest GitHub release of this fork
             try:
-                _, url = latest_release_asset(CREAMLINUX_REPO)
+                _, url = creamlib.latest_release_asset(creamlib.CREAMLINUX_REPO)
                 print(f"Downloading creamlinux release: {url}")
                 tmpdir = tempfile.mkdtemp(prefix="creamlinux-dist-")
                 zip_path = os.path.join(tmpdir, "creamlinux.zip")
                 with open(zip_path, "wb") as fh:
-                    fh.write(http_get(url))
+                    fh.write(creamlib.http_get(url))
                 with zipfile.ZipFile(zip_path) as zf:
                     zf.extractall(tmpdir)
                 dist = tmpdir
@@ -531,12 +173,13 @@ def main():
                       f"available to download: {exc}", file=sys.stderr)
                 print("Build it first with:  sh ./build.sh", file=sys.stderr)
                 return 1
-        return install_native(game_dir, dist, args.dry_run, args.verbose)
+        return creamlib.install_native(game_dir, dist, args.dry_run,
+                                       args.verbose)
 
     if mode == "proton":
-        cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "creamlinux")
-        return install_proton(game_dir, cache_dir, args.dry_run, args.verbose,
-                              args.smokeapi_mode)
+        return creamlib.install_proton(game_dir, dry_run=args.dry_run,
+                                       verbose=args.verbose,
+                                       mode=args.smokeapi_mode)
 
     return 1
 

@@ -21,6 +21,7 @@ plus a single install tool covering both native and Proton titles.
 | 12 | setup.py --smokeapi-mode hook\|koaloader\|proxy | Proton fallback install modes; Koaloader injector proxy | Koaloader |
 | 13 | cream.sh bitness check | preload only the matching lib32/lib64, clean logs (#71) | CreamAPI |
 | 14 | logging = false | [config] flag silences spdlog output | CreamAPI |
+| 15 | Web UI | tools/gui.py: local web app (games table, install/uninstall, config editor, DLC updater, live log); creamlib.py shared core; setup.py CLI regression-tested | - |
 ## 📋 Backlog
 
 - Hooks for new init paths: SteamInternal_ContextInit, dlvsym, SteamClient()

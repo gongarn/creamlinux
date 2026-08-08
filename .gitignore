@@ -5,3 +5,4 @@ lib/
 output
 .idea
 cmake-build-debug/
+tools/__pycache__/

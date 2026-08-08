@@ -1,0 +1,94 @@
+:root {
+  --bg: #1b2838;
+  --bg2: #16202d;
+  --panel: #2a3f5a;
+  --panel2: #324a6b;
+  --text: #c7d5e0;
+  --text-dim: #8ba0b3;
+  --accent: #66c0f4;
+  --green: #a4d007;
+  --red: #ff5c5c;
+  --border: #41708f;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+header {
+  display: flex; justify-content: space-between; align-items: center;
+  background: var(--bg2); padding: 12px 20px; border-bottom: 1px solid var(--border);
+}
+.brand { font-size: 20px; font-weight: 700; color: var(--accent); }
+header .actions button { margin-left: 8px; }
+button, select, input {
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 7px 12px; font-size: 13px; cursor: pointer;
+}
+button:hover { background: var(--panel2); }
+button.primary { background: #1e6fa8; border-color: #2d89c8; }
+button.danger { background: #8f3a3a; border-color: #b04a4a; }
+button.small { padding: 3px 8px; font-size: 12px; }
+button:disabled { opacity: .5; cursor: default; }
+input[type=search] { width: 280px; }
+main { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+#dashboard { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+.stat {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px 22px; text-align: center; min-width: 110px;
+}
+.stat span { display: block; font-size: 26px; font-weight: 700; color: var(--accent); }
+.stat label { color: var(--text-dim); font-size: 12px; }
+.busy-hide { display: none; }
+body.busy .busy-hide { display: block; }
+body.busy .stat span { color: var(--green); }
+
+#toolbar { display: flex; gap: 10px; margin-bottom: 14px; }
+
+table { width: 100%; border-collapse: collapse; background: var(--bg2); }
+th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+th { color: var(--text-dim); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+tr:hover td { background: rgba(102, 192, 244, .06); }
+td .actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+.badge.native { background: #2f5d3a; color: #a4d007; }
+.badge.proton { background: #5d3a2f; color: #ffb347; }
+.badge.creamlinux, .badge.smokeapi { background: #1e6fa8; color: #cfe8ff; }
+.badge.none { background: #3a3a3a; color: var(--text-dim); }
+
+#log-panel {
+  position: fixed; right: 20px; bottom: 20px; width: 560px; max-height: 380px;
+  background: #0e141b; border: 1px solid var(--border); border-radius: 6px;
+  display: flex; flex-direction: column; box-shadow: 0 6px 24px rgba(0,0,0,.5);
+}
+#log-panel.hidden { display: none; }
+.log-head {
+  display: flex; justify-content: space-between; padding: 8px 12px;
+  background: var(--panel); border-bottom: 1px solid var(--border); font-weight: 600;
+}
+#log-content { padding: 10px 12px; overflow-y: auto; font: 12px/1.5 monospace;
+  color: #9fd1a0; white-space: pre-wrap; flex: 1; }
+
+#modal-root { position: fixed; inset: 0; display: none; align-items: center;
+  justify-content: center; background: rgba(0,0,0,.6); z-index: 10; }
+#modal-root.open { display: flex; }
+.modal {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+  width: 560px; max-height: 84vh; display: flex; flex-direction: column;
+}
+.modal h2 { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 16px; }
+.modal .body { padding: 14px 18px; overflow-y: auto; }
+.modal .foot { padding: 12px 18px; border-top: 1px solid var(--border);
+  display: flex; gap: 10px; justify-content: flex-end; }
+.modal label.row { display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0; }
+.modal .hint { color: var(--text-dim); font-size: 12px; margin: 2px 0 10px; }
+.modal select, .modal input[type=text] { min-width: 200px; }
+.modal .dlc-list { max-height: 200px; overflow-y: auto; border: 1px solid var(--border);
+  border-radius: 4px; margin-top: 8px; }
+.modal .dlc-list div { display: flex; gap: 8px; padding: 4px 8px; }
+.modal .dlc-list span { flex: 1; }
+.muted { color: var(--text-dim); }

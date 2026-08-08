@@ -81,6 +81,20 @@ of already-known ids, and pass several appids to process multiple games.
 
 If that doesn't work, please check the Troubleshooting section below.
 
+## Web UI
+For a graphical interface, run:
+```
+python3 tools/gui.py
+```
+It starts a local web app at `http://127.0.0.1:8765` and opens your browser
+(no domain, no internet needed - everything runs on your machine). The UI
+shows every installed Steam game with its type and unlocker status and lets
+you install/remove unlockers, switch SmokeAPI modes, edit `cream_api.ini`
+(unlockall, logging, DLC list) and refresh DLC lists from the Steam Store
+with a live log.
+
+![Web UI](docs/screenshot.png)
+
 ## Building from source
 0. Ensure you have all build dependencies installed:
 - On Ubuntu: `build-essential` `gcc-multilib` `g++-multilib` `cmake` `git`

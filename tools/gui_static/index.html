@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>creamlinux — DLC Unlocker</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">🐨 creamlinux</div>
+  <div class="actions">
+    <button id="btn-rescan">Сканировать</button>
+    <button id="btn-logs">Журнал</button>
+  </div>
+</header>
+
+<main>
+  <section id="dashboard">
+    <div class="stat"><span id="stat-total">0</span><label>всего игр</label></div>
+    <div class="stat"><span id="stat-native">0</span><label>native</label></div>
+    <div class="stat"><span id="stat-proton">0</span><label>Proton</label></div>
+    <div class="stat"><span id="stat-unlocked">0</span><label>с unlocker</label></div>
+    <div class="stat busy-hide"><span id="stat-busy">…</span><label>операция</label></div>
+  </section>
+
+  <section id="toolbar">
+    <input id="search" type="search" placeholder="Поиск игры…">
+    <select id="filter-type">
+      <option value="">все типы</option>
+      <option value="native">native</option>
+      <option value="proton">Proton</option>
+    </select>
+    <select id="filter-status">
+      <option value="">любой статус</option>
+      <option value="none">без unlocker</option>
+      <option value="installed">с unlocker</option>
+    </select>
+  </section>
+
+  <table id="games">
+    <thead>
+      <tr><th>Игра</th><th>AppID</th><th>Тип</th><th>Статус</th><th>Действия</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</main>
+
+<div id="log-panel" class="hidden">
+  <div class="log-head"><span>Журнал</span><button id="btn-log-close">✕</button></div>
+  <pre id="log-content"></pre>
+</div>
+
+<div id="modal-root"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
