@@ -1,0 +1,43 @@
+name: Sync cream_api.ini from upstream
+
+# Keeps the DLC list fresh: every Monday (and on manual trigger) pulls the
+# latest package/cream_api.ini from anticitizn/creamlinux (the upstream the
+# community keeps updating) and commits it if it changed.
+on:
+  schedule:
+    - cron: "0 3 * * 1" # every Monday 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download upstream cream_api.ini
+        run: |
+          curl -fsSL -o /tmp/upstream_cream_api.ini \
+            https://raw.githubusercontent.com/anticitizn/creamlinux/master/package/cream_api.ini
+
+      - name: Compare with current list
+        id: compare
+        run: |
+          if cmp -s /tmp/upstream_cream_api.ini package/cream_api.ini; then
+            echo "cream_api.ini is up to date"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            cp /tmp/upstream_cream_api.ini package/cream_api.ini
+          fi
+
+      - name: Commit and push
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package/cream_api.ini
+          git commit -m "chore: sync cream_api.ini from upstream"
+          git push
