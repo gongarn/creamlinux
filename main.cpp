@@ -3,7 +3,9 @@
 #include <fstream>
 #include "ext/steam/isteamapps.h"
 #include "ext/steam/isteamclient.h"
+#include "ext/steam/isteamclient020.h"
 #include "ext/steam/isteamuser.h"
+#include "ext/steam/isteamuser021.h"
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/basic_file_sink.h"
 #include "ext/ini.h"
@@ -23,6 +25,34 @@ using namespace std;
 #include <stdio.h>
 
 vector<tuple<int, string>> dlcs;
+
+// Returns true if the given appID is present in the cream_api.ini [dlc] list
+static bool is_dlc_unlocked(AppId_t appID) {
+    return std::find_if(
+        std::begin(dlcs),
+        std::end(dlcs),
+        [&](const tuple<int, string>& a) { return std::get<0>(a) == appID; }) != std::end(dlcs);
+}
+
+// Steam interface versions we hook. ISteamApps v009 appends methods to v008 (vtable-compatible),
+// but SteamUser022 added GetAuthTicketForWebApi in the middle of the vtable and SteamClient021
+// removed 4 methods, so those need separate wrapper classes (see Hookey_SteamUser_Class21/23,
+// Hookey_SteamClient_Class20/23).
+#define STEAMAPPS_INTERFACE_VERSION_N008 "STEAMAPPS_INTERFACE_VERSION008"
+#define STEAMAPPS_INTERFACE_VERSION_N009 "STEAMAPPS_INTERFACE_VERSION009"
+
+#define STEAMUSER_INTERFACE_VERSION_020 "SteamUser020"
+#define STEAMUSER_INTERFACE_VERSION_021 "SteamUser021"
+#define STEAMUSER_INTERFACE_VERSION_022 "SteamUser022"
+#define STEAMUSER_INTERFACE_VERSION_023 "SteamUser023"
+
+#define STEAMCLIENT_INTERFACE_VERSION_017 "SteamClient017"
+#define STEAMCLIENT_INTERFACE_VERSION_018 "SteamClient018"
+#define STEAMCLIENT_INTERFACE_VERSION_019 "SteamClient019"
+#define STEAMCLIENT_INTERFACE_VERSION_020 "SteamClient020"
+#define STEAMCLIENT_INTERFACE_VERSION_021 "SteamClient021"
+#define STEAMCLIENT_INTERFACE_VERSION_022 "SteamClient022"
+#define STEAMCLIENT_INTERFACE_VERSION_023 "SteamClient023"
 
 void* (*real_dlsym)(void *handle, const char *name);
 
@@ -50,16 +80,11 @@ public:
     }
     bool BIsDlcInstalled(AppId_t appID) {
         spdlog::info("ISteamApps->BIsDlcInstalled called");
-        auto reslt = std::find_if(
-            std::begin(dlcs),
-            std::end(dlcs),
-            [&] (const tuple<int, string> a) { return std::get<0>(a) == appID; }) != std::end(dlcs);
-        if (reslt) {
+        if (is_dlc_unlocked(appID)) {
             spdlog::info("BIsDlcInstalled unlocked {}", appID);
             return true;
-        } else {
-            return false;
         }
+        return false;
     }
     bool BGetDLCDataByIndex(int iDLC, AppId_t* pAppID, bool* pbAvailable, char* pchName, int cchNameBufferSize) {
         spdlog::info("ISteamApps->BGetDLCDataByIndex called");
@@ -95,11 +120,7 @@ public:
             return real_steamApps->BIsSubscribedApp(appID); 
         } else {
             spdlog::info("BIsSubscribedApp creamified called");
-            auto reslt = std::find_if(
-                std::begin(dlcs),
-                std::end(dlcs),
-                [&] (const tuple<int, string> a) { return std::get<0>(a) == appID; }) != std::end(dlcs);
-            if (reslt) {
+            if (is_dlc_unlocked(appID)) {
                 spdlog::info("BIsSubscribedApp unlocked {}", appID);
                 return true;
             } else {
@@ -128,10 +149,19 @@ public:
     SteamAPICall_t GetFileDetails(const char* pszFileName) { return real_steamApps->GetFileDetails(pszFileName); }
     int GetLaunchCommandLine(char* pszCommandLine, int cubCommandLine) { return real_steamApps->GetLaunchCommandLine(pszCommandLine, cubCommandLine); }
 	virtual bool BIsTimedTrial( uint32* punSecondsAllowed, uint32* punSecondsPlayed ) { return real_steamApps->BIsTimedTrial(punSecondsAllowed, punSecondsPlayed); } 
+    // ---- ISteamApps v009 methods (STEAMAPPS_INTERFACE_VERSION009) ----
+    bool SetDlcContext( AppId_t nAppID ) { return real_steamApps->SetDlcContext(nAppID); }
+    int GetNumBetas( int *pnAvailable, int *pnPrivate ) { return real_steamApps->GetNumBetas(pnAvailable, pnPrivate); }
+    bool GetBetaInfo( int iBetaIndex, uint32 *punFlags, uint32 *punBuildID, char *pchBetaName, int cchBetaName, char *pchDescription, int cchDescription, uint32 *punLastUpdated ) {
+        return real_steamApps->GetBetaInfo(iBetaIndex, punFlags, punBuildID, pchBetaName, cchBetaName, pchDescription, cchDescription, punLastUpdated);
+    }
+    bool SetActiveBeta( const char *pchBetaName ) { return real_steamApps->SetActiveBeta(pchBetaName); }
+    void SetGamePerformanceSetting( EGamePerformanceSetting setting ) { return real_steamApps->SetGamePerformanceSetting(setting); }
+    void SetGameRenderResolution( uint32 unWidth, uint32 unHeight ) { return real_steamApps->SetGameRenderResolution(unWidth, unHeight); }
     ISteamApps* real_steamApps;
 };
 
-class Hookey_SteamUser_Class : public ISteamUser {
+class Hookey_SteamUser_Class21 : public ISteamUser021 {
 public:
 	HSteamUser GetHSteamUser() {
         return real_steamUser->GetHSteamUser();
@@ -192,11 +222,7 @@ public:
     };
 	EUserHasLicenseForAppResult UserHasLicenseForApp( CSteamID steamID, AppId_t appID ) {
         spdlog::info("ISteamUser->UserHasLicenseForApp {} called", appID);
-        auto reslt = std::find_if(
-            std::begin(dlcs),
-            std::end(dlcs),
-            [&] (const tuple<int, string> a) { return std::get<0>(a) == appID; }) != std::end(dlcs);
-        if (reslt) {
+        if (is_dlc_unlocked(appID)) {
             spdlog::info("ISteamUser_UserHasLicenseForApp result: owned");
             return (EUserHasLicenseForAppResult)0;
         } else {
@@ -246,7 +272,7 @@ public:
 	virtual bool BSetDurationControlOnlineState( EDurationControlOnlineState eNewState ) {
         return real_steamUser->BSetDurationControlOnlineState(eNewState);
     };
-    ISteamUser* real_steamUser;
+    ISteamUser021* real_steamUser;
 };
 static std::shared_ptr<Hookey_SteamApps_Class> steamapps_instance;
 
@@ -263,20 +289,111 @@ ISteamApps* Hookey_SteamApps(ISteamApps* real_steamApps) {
     }
 }
 
-static std::shared_ptr<Hookey_SteamUser_Class> steamuser_instance;
+// ISteamUser v022/v023 wrapper: SteamUser022 added GetAuthTicketForWebApi in the middle of the
+// vtable, shifting every method after it. Games requesting SteamUser022/023 MUST get this class;
+// games requesting SteamUser020/021 get Hookey_SteamUser_Class21 (vtable-compatible).
+class Hookey_SteamUser_Class23 : public ISteamUser {
+public:
+	HSteamUser GetHSteamUser() { return real_steamUser->GetHSteamUser(); };
+	bool BLoggedOn() { return real_steamUser->BLoggedOn(); };
+	CSteamID GetSteamID() { return real_steamUser->GetSteamID(); };
+	int InitiateGameConnection_DEPRECATED( void *pAuthBlob, int cbMaxAuthBlob, CSteamID steamIDGameServer, uint32 unIPServer, uint16 usPortServer, bool bSecure ) {
+        return real_steamUser->InitiateGameConnection_DEPRECATED(pAuthBlob, cbMaxAuthBlob, steamIDGameServer, unIPServer, usPortServer, bSecure);
+    };
+	void TerminateGameConnection_DEPRECATED( uint32 unIPServer, uint16 usPortServer ) {
+        return real_steamUser->TerminateGameConnection_DEPRECATED(unIPServer, usPortServer);
+    };
+	void TrackAppUsageEvent( CGameID gameID, int eAppUsageEvent, const char *pchExtraInfo = "" ) {
+        return real_steamUser->TrackAppUsageEvent(gameID, eAppUsageEvent, pchExtraInfo);
+    };
+	bool GetUserDataFolder( char *pchBuffer, int cubBuffer ) {
+        return real_steamUser->GetUserDataFolder(pchBuffer, cubBuffer);
+    };
+	void StartVoiceRecording( ) { return real_steamUser->StartVoiceRecording(); };
+	void StopVoiceRecording( ) { return real_steamUser->StopVoiceRecording(); };
+	EVoiceResult GetAvailableVoice( uint32 *pcbCompressed, uint32 *pcbUncompressed_Deprecated, uint32 nUncompressedVoiceDesiredSampleRate_Deprecated) {
+        return real_steamUser->GetAvailableVoice(pcbCompressed, pcbUncompressed_Deprecated, nUncompressedVoiceDesiredSampleRate_Deprecated);
+    };
+	EVoiceResult GetVoice( bool bWantCompressed, void *pDestBuffer, uint32 cbDestBufferSize, uint32 *nBytesWritten, bool bWantUncompressed_Deprecated, void *pUncompressedDestBuffer_Deprecated, uint32 cbUncompressedDestBufferSize_Deprecated, uint32 *nUncompressBytesWritten_Deprecated, uint32 nUncompressedVoiceDesiredSampleRate_Deprecated ) {
+        return real_steamUser->GetVoice(bWantCompressed, pDestBuffer, cbDestBufferSize, nBytesWritten, bWantUncompressed_Deprecated, pUncompressedDestBuffer_Deprecated, cbUncompressedDestBufferSize_Deprecated, nUncompressBytesWritten_Deprecated, nUncompressedVoiceDesiredSampleRate_Deprecated);
+    };
+	EVoiceResult DecompressVoice( const void *pCompressed, uint32 cbCompressed, void *pDestBuffer, uint32 cbDestBufferSize, uint32 *nBytesWritten, uint32 nDesiredSampleRate ) {
+        return real_steamUser->DecompressVoice(pCompressed, cbCompressed, pDestBuffer, cbDestBufferSize, nBytesWritten, nDesiredSampleRate);
+    };
+	uint32 GetVoiceOptimalSampleRate() { return real_steamUser->GetVoiceOptimalSampleRate(); };
+	HAuthTicket GetAuthSessionTicket( void *pTicket, int cbMaxTicket, uint32 *pcbTicket, const SteamNetworkingIdentity *pSteamNetworkingIdentity ) {
+        return real_steamUser->GetAuthSessionTicket(pTicket, cbMaxTicket, pcbTicket, pSteamNetworkingIdentity);
+    };
+	HAuthTicket GetAuthTicketForWebApi( const char *pchIdentity ) {
+        return real_steamUser->GetAuthTicketForWebApi(pchIdentity);
+    };
+	EBeginAuthSessionResult BeginAuthSession( const void *pAuthTicket, int cbAuthTicket, CSteamID steamID ) {
+        return real_steamUser->BeginAuthSession(pAuthTicket, cbAuthTicket, steamID);
+    };
+	void EndAuthSession( CSteamID steamID ) { return real_steamUser->EndAuthSession(steamID); };
+	void CancelAuthTicket( HAuthTicket hAuthTicket ) { return real_steamUser->CancelAuthTicket(hAuthTicket); };
+	EUserHasLicenseForAppResult UserHasLicenseForApp( CSteamID steamID, AppId_t appID ) {
+        spdlog::info("ISteamUser->UserHasLicenseForApp {} called", appID);
+        if (is_dlc_unlocked(appID)) {
+            spdlog::info("ISteamUser_UserHasLicenseForApp result: owned");
+            return (EUserHasLicenseForAppResult)0;
+        } else {
+            spdlog::info("ISteamUser_UserHasLicenseForApp result: not owned");
+            return (EUserHasLicenseForAppResult)2;
+        }
+    };
+	bool BIsBehindNAT() { return real_steamUser->BIsBehindNAT(); };
+	void AdvertiseGame( CSteamID steamIDGameServer, uint32 unIPServer, uint16 usPortServer ) {
+        return real_steamUser->AdvertiseGame(steamIDGameServer, unIPServer, usPortServer);
+    };
+	SteamAPICall_t RequestEncryptedAppTicket( void *pDataToInclude, int cbDataToInclude ) {
+        return real_steamUser->RequestEncryptedAppTicket(pDataToInclude, cbDataToInclude);
+    };
+	bool GetEncryptedAppTicket( void *pTicket, int cbMaxTicket, uint32 *pcbTicket ) {
+        return real_steamUser->GetEncryptedAppTicket(pTicket, cbMaxTicket, pcbTicket);
+    };
+	int GetGameBadgeLevel( int nSeries, bool bFoil ) { return real_steamUser->GetGameBadgeLevel(nSeries, bFoil); };
+	int GetPlayerSteamLevel() { return real_steamUser->GetPlayerSteamLevel(); };
+	SteamAPICall_t RequestStoreAuthURL( const char *pchRedirectURL ) {
+        return real_steamUser->RequestStoreAuthURL(pchRedirectURL);
+    };
+	bool BIsPhoneVerified() { return real_steamUser->BIsPhoneVerified(); };
+	bool BIsTwoFactorEnabled() { return real_steamUser->BIsTwoFactorEnabled(); };
+	bool BIsPhoneIdentifying() { return real_steamUser->BIsPhoneIdentifying(); };
+	bool BIsPhoneRequiringVerification() { return real_steamUser->BIsPhoneRequiringVerification(); };
+	SteamAPICall_t GetMarketEligibility() { return real_steamUser->GetMarketEligibility(); };
+	virtual SteamAPICall_t GetDurationControl() { return real_steamUser->GetDurationControl(); }
+	virtual bool BSetDurationControlOnlineState( EDurationControlOnlineState eNewState ) {
+        return real_steamUser->BSetDurationControlOnlineState(eNewState);
+    };
+    ISteamUser* real_steamUser;
+};
+static std::shared_ptr<Hookey_SteamUser_Class21> steamuser21_instance;
+static std::shared_ptr<Hookey_SteamUser_Class23> steamuser23_instance;
 
-ISteamUser* Hookey_SteamUser(ISteamUser* real_steamUser) {
-    if (steamuser_instance != NULL) {
-        return steamuser_instance.get();
+ISteamUser021* Hookey_SteamUser21(ISteamUser021* real_steamUser) {
+    if (steamuser21_instance != NULL) {
+        return steamuser21_instance.get();
     } else {
-        Hookey_SteamUser_Class nhooky;
+        Hookey_SteamUser_Class21 nhooky;
         nhooky.real_steamUser = real_steamUser;
-        steamuser_instance = std::make_shared<Hookey_SteamUser_Class>(nhooky);
-        return Hookey_SteamUser(real_steamUser);
+        steamuser21_instance = std::make_shared<Hookey_SteamUser_Class21>(nhooky);
+        return Hookey_SteamUser21(real_steamUser);
     }
 }
 
-class Hookey_SteamClient_Class : public ISteamClient {
+ISteamUser* Hookey_SteamUser23(ISteamUser* real_steamUser) {
+    if (steamuser23_instance != NULL) {
+        return steamuser23_instance.get();
+    } else {
+        Hookey_SteamUser_Class23 nhooky;
+        nhooky.real_steamUser = real_steamUser;
+        steamuser23_instance = std::make_shared<Hookey_SteamUser_Class23>(nhooky);
+        return Hookey_SteamUser23(real_steamUser);
+    }
+}
+
+class Hookey_SteamClient_Class20 : public ISteamClient020 {
 public:
 	HSteamPipe CreateSteamPipe() {
         return real_steamClient->CreateSteamPipe();
@@ -295,8 +412,12 @@ public:
     }
 	ISteamUser *GetISteamUser( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
         spdlog::info("ISteamClient->GetISteamUser {0} called (hooked)", pchVersion);
-        return Hookey_SteamUser(real_steamClient->GetISteamUser(hSteamUser, hSteamPipe, pchVersion));
-        //return real_steamClient->GetISteamUser(hSteamUser, hSteamPipe, pchVersion);
+        ISteamUser* real_user = real_steamClient->GetISteamUser(hSteamUser, hSteamPipe, pchVersion);
+        if (strstr(pchVersion, STEAMUSER_INTERFACE_VERSION_022) == pchVersion ||
+            strstr(pchVersion, STEAMUSER_INTERFACE_VERSION_023) == pchVersion) {
+            return Hookey_SteamUser23(real_user);
+        }
+        return (ISteamUser*)Hookey_SteamUser21((ISteamUser021*)real_user);
     }
     ISteamGameServer *GetISteamGameServer( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
         return real_steamClient->GetISteamGameServer(hSteamUser, hSteamPipe, pchVersion);
@@ -341,7 +462,7 @@ public:
 	ISteamScreenshots *GetISteamScreenshots( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) {
         return real_steamClient->GetISteamScreenshots(hSteamuser, hSteamPipe, pchVersion);
     }
-	ISteamGameSearch *GetISteamGameSearch( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+	void *GetISteamGameSearch( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) {
         return real_steamClient->GetISteamGameSearch(hSteamuser, hSteamPipe, pchVersion);
     }
 	uint32 GetIPCCallCount() {
@@ -362,14 +483,14 @@ public:
 	ISteamUGC *GetISteamUGC( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
         return real_steamClient->GetISteamUGC(hSteamUser, hSteamPipe, pchVersion);
     }
-	ISteamAppList *GetISteamAppList( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+	void *GetISteamAppList( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
         spdlog::info("ISteamClient->GetISteamAppList called");
         return real_steamClient->GetISteamAppList(hSteamUser, hSteamPipe, pchVersion);
     }
 	ISteamMusic *GetISteamMusic( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) {
         return real_steamClient->GetISteamMusic(hSteamuser, hSteamPipe, pchVersion);
     }
-	ISteamMusicRemote *GetISteamMusicRemote(HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion) {
+	void *GetISteamMusicRemote(HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion) {
         return real_steamClient->GetISteamMusicRemote(hSteamuser, hSteamPipe, pchVersion);
     }
 	ISteamHTMLSurface *GetISteamHTMLSurface(HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion) {
@@ -411,29 +532,136 @@ public:
     void DestroyAllInterfaces() {
          return real_steamClient->DestroyAllInterfaces();
     }
+    ISteamClient020* real_steamClient;
+};
+
+// ISteamClient v021/v022/v023 wrapper: SteamClient021 removed GetISteamGameSearch,
+// DEPRECATED_GetISteamUnifiedMessages, GetISteamAppList and GetISteamMusicRemote from the
+// middle of the vtable, so this class is NOT vtable-compatible with SteamClient020 and older.
+// Games requesting SteamClient017-020 get Hookey_SteamClient_Class20 instead.
+class Hookey_SteamClient_Class23 : public ISteamClient {
+public:
+	HSteamPipe CreateSteamPipe() { return real_steamClient->CreateSteamPipe(); }
+	bool BReleaseSteamPipe( HSteamPipe hSteamPipe ) { return real_steamClient->BReleaseSteamPipe(hSteamPipe); }
+	HSteamUser ConnectToGlobalUser( HSteamPipe hSteamPipe ) { return real_steamClient->ConnectToGlobalUser(hSteamPipe); }
+	HSteamUser CreateLocalUser( HSteamPipe *phSteamPipe, EAccountType eAccountType ) { return real_steamClient->CreateLocalUser(phSteamPipe, eAccountType); }
+	void ReleaseUser( HSteamPipe hSteamPipe, HSteamUser hUser ) { return real_steamClient->ReleaseUser(hSteamPipe, hUser); }
+	ISteamUser *GetISteamUser( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        spdlog::info("ISteamClient->GetISteamUser {0} called (hooked)", pchVersion);
+        return Hookey_SteamUser23(real_steamClient->GetISteamUser(hSteamUser, hSteamPipe, pchVersion));
+    }
+	ISteamGameServer *GetISteamGameServer( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamGameServer(hSteamUser, hSteamPipe, pchVersion);
+    }
+	void SetLocalIPBinding( const SteamIPAddress_t &unIP, uint16 usPort ) { return real_steamClient->SetLocalIPBinding(unIP, usPort); }
+	ISteamFriends *GetISteamFriends( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamFriends(hSteamUser, hSteamPipe, pchVersion);
+    }
+	ISteamUtils *GetISteamUtils( HSteamPipe hSteamPipe, const char *pchVersion ) {
+        spdlog::info("ISteamClient->GetISteamUtils called");
+        return real_steamClient->GetISteamUtils(hSteamPipe, pchVersion);
+    }
+	ISteamMatchmaking *GetISteamMatchmaking( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamMatchmaking(hSteamUser, hSteamPipe, pchVersion);
+    }
+	ISteamMatchmakingServers *GetISteamMatchmakingServers( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamMatchmakingServers(hSteamUser, hSteamPipe, pchVersion);
+    }
+	void *GetISteamGenericInterface( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        spdlog::info("ISteamClient->GetISteamGenericInterface {0} called (you're in for a wild ride)", pchVersion);
+        return real_steamClient->GetISteamGenericInterface(hSteamUser, hSteamPipe, pchVersion);
+    }
+	ISteamUserStats *GetISteamUserStats( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamUserStats(hSteamUser, hSteamPipe, pchVersion);
+    }
+	ISteamGameServerStats *GetISteamGameServerStats( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamGameServerStats(hSteamUser, hSteamPipe, pchVersion);
+    }
+	ISteamApps *GetISteamApps( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        spdlog::info("ISteamClient->GetISteamApps {0} called (hooked)", pchVersion);
+        return Hookey_SteamApps(real_steamClient->GetISteamApps(hSteamUser, hSteamPipe, pchVersion));
+    }
+	ISteamNetworking *GetISteamNetworking( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamNetworking(hSteamUser, hSteamPipe, pchVersion);
+    }
+	ISteamRemoteStorage *GetISteamRemoteStorage( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamRemoteStorage(hSteamuser, hSteamPipe, pchVersion);
+    }
+	ISteamScreenshots *GetISteamScreenshots( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamScreenshots(hSteamuser, hSteamPipe, pchVersion);
+    }
+	void RunFrame() { /* real ISteamClient::RunFrame is protected in SteamClient021+; safe no-op */ }
+	void SetWarningMessageHook( SteamAPIWarningMessageHook_t pFunction ) { return real_steamClient->SetWarningMessageHook(pFunction); }
+	bool BShutdownIfAllPipesClosed() { return real_steamClient->BShutdownIfAllPipesClosed(); }
+	uint32 GetIPCCallCount() { return real_steamClient->GetIPCCallCount(); }
+	ISteamHTTP *GetISteamHTTP( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamHTTP(hSteamuser, hSteamPipe, pchVersion);
+    }
+	ISteamController *GetISteamController( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamController(hSteamUser, hSteamPipe, pchVersion);
+    }
+	ISteamUGC *GetISteamUGC( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamUGC(hSteamUser, hSteamPipe, pchVersion);
+    }
+	ISteamMusic *GetISteamMusic( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamMusic(hSteamuser, hSteamPipe, pchVersion);
+    }
+	ISteamHTMLSurface *GetISteamHTMLSurface(HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion) {
+        return real_steamClient->GetISteamHTMLSurface(hSteamuser, hSteamPipe, pchVersion);
+    }
+    // SteamClient021+ moved these to a protected STEAM_PRIVATE_API section; we must override
+    // the pure virtuals but cannot delegate. They are deprecated/internal, so no-op is safe.
+    void DEPRECATED_Set_SteamAPI_CPostAPIResultInProcess( void (*)() ) { }
+    void DEPRECATED_Remove_SteamAPI_CPostAPIResultInProcess( void (*)() ) { }
+    void Set_SteamAPI_CCheckCallbackRegisteredInProcess( SteamAPI_CheckCallbackRegistered_t func ) { }
+	ISteamInventory *GetISteamInventory( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamInventory(hSteamuser, hSteamPipe, pchVersion);
+    }
+	ISteamVideo *GetISteamVideo( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamVideo(hSteamuser, hSteamPipe, pchVersion);
+    }
+	ISteamParentalSettings *GetISteamParentalSettings( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamParentalSettings(hSteamuser, hSteamPipe, pchVersion);
+    }
+	ISteamInput *GetISteamInput( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamInput(hSteamUser, hSteamPipe, pchVersion);
+    }
+	ISteamParties *GetISteamParties( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamParties(hSteamUser, hSteamPipe, pchVersion);
+    }
+	ISteamRemotePlay *GetISteamRemotePlay( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) {
+        return real_steamClient->GetISteamRemotePlay(hSteamUser, hSteamPipe, pchVersion);
+    }
+    void DestroyAllInterfaces() { /* real ISteamClient::DestroyAllInterfaces is protected in SteamClient021+; safe no-op (SteamAPI_Shutdown handles cleanup) */ }
     ISteamClient* real_steamClient;
 };
 
-static std::shared_ptr<Hookey_SteamClient_Class> steamclient_instance;
+static std::shared_ptr<Hookey_SteamClient_Class20> steamclient20_instance;
+static std::shared_ptr<Hookey_SteamClient_Class23> steamclient23_instance;
 
-ISteamClient* Hookey_SteamClient(ISteamClient* real_steamClient) {
-    if (steamclient_instance != NULL) {
-        return steamclient_instance.get();
+ISteamClient020* Hookey_SteamClient20(ISteamClient020* real_steamClient) {
+    if (steamclient20_instance != NULL) {
+        return steamclient20_instance.get();
     } else {
-        Hookey_SteamClient_Class nhooky;
+        Hookey_SteamClient_Class20 nhooky;
         nhooky.real_steamClient = real_steamClient;
-        steamclient_instance = std::make_shared<Hookey_SteamClient_Class>(nhooky);
-        return Hookey_SteamClient(real_steamClient);
+        steamclient20_instance = std::make_shared<Hookey_SteamClient_Class20>(nhooky);
+        return Hookey_SteamClient20(real_steamClient);
     }
 }
 
-#define STEAMAPPS_INTERFACE_VERSION_N008 "STEAMAPPS_INTERFACE_VERSION008"
+ISteamClient* Hookey_SteamClient23(ISteamClient* real_steamClient) {
+    if (steamclient23_instance != NULL) {
+        return steamclient23_instance.get();
+    } else {
+        Hookey_SteamClient_Class23 nhooky;
+        nhooky.real_steamClient = real_steamClient;
+        steamclient23_instance = std::make_shared<Hookey_SteamClient_Class23>(nhooky);
+        return Hookey_SteamClient23(real_steamClient);
+    }
+}
 
-#define STEAMUSER_INTERFACE_VERSION_020 "SteamUser020"
-#define STEAMUSER_INTERFACE_VERSION_021 "SteamUser021"
-
-#define STEAMCLIENT_INTERFACE_VERSION_017 "SteamClient017"
-#define STEAMCLIENT_INTERFACE_VERSION_019 "SteamClient019"
+#define STEAMCLIENT_INTERFACE_VERSION_023 "SteamClient023"
 
 extern "C" void* CreateInterface(const char *pName, int *pReturnCode) {
     ensure_realdlsym();
@@ -451,8 +679,41 @@ extern "C" void Steam_LogOn(HSteamUser hUser, HSteamPipe hSteamPipe, uint64 ulSt
     real(hUser, hSteamPipe, ulSteamID);
 }
 
-extern "C" bool SteamAPI_ISteamApps_BGetDLCDataByIndex(int iDLC, AppId_t* pAppID, bool* pbAvailable, char* pchName, int cchNameBufferSize) {
-        spdlog::info("SteamAPI_ISteamApps_BGetDLCDataByIndex called");
+// ---- Flat API hooks (steam_api_flat.h) ----
+// Some games (e.g. Unity titles) call SteamAPI_ISteamApps_* and SteamAPI_ISteamUser_*
+// directly instead of going through the C++ interface accessors. Since creamlinux is
+// LD_PRELOADed before libsteam_api.so, these symbols interpose the real ones.
+// NOTE: the real flat API passes `self` as the first argument; it must stay in the
+// signature or 32-bit builds will read the wrong stack slot.
+
+extern "C" int SteamAPI_ISteamApps_GetDLCCount(ISteamApps* self) {
+    spdlog::info("SteamAPI_ISteamApps_GetDLCCount called (flat API)");
+    return (int)dlcs.size();
+}
+
+extern "C" bool SteamAPI_ISteamApps_BIsDlcInstalled(ISteamApps* self, AppId_t appID) {
+    spdlog::info("SteamAPI_ISteamApps_BIsDlcInstalled called (flat API) appID {}", appID);
+    if (is_dlc_unlocked(appID)) {
+        spdlog::info("SteamAPI_ISteamApps_BIsDlcInstalled unlocked {}", appID);
+        return true;
+    }
+    return false;
+}
+
+extern "C" bool SteamAPI_ISteamApps_BIsSubscribedApp(ISteamApps* self, AppId_t appID) {
+    spdlog::info("SteamAPI_ISteamApps_BIsSubscribedApp called (flat API) appID {}", appID);
+    if (ini["methods"]["disable_steamapps_issubscribedapp"] == "true") {
+        return self->BIsSubscribedApp(appID);
+    }
+    if (is_dlc_unlocked(appID)) {
+        spdlog::info("SteamAPI_ISteamApps_BIsSubscribedApp unlocked {}", appID);
+        return true;
+    }
+    return false;
+}
+
+extern "C" bool SteamAPI_ISteamApps_BGetDLCDataByIndex(ISteamApps* self, int iDLC, AppId_t* pAppID, bool* pbAvailable, char* pchName, int cchNameBufferSize) {
+        spdlog::info("SteamAPI_ISteamApps_BGetDLCDataByIndex called (flat API)");
         if ((size_t)iDLC >= dlcs.size()) {
             return false;
         }
@@ -468,28 +729,42 @@ extern "C" bool SteamAPI_ISteamApps_BGetDLCDataByIndex(int iDLC, AppId_t* pAppID
         return true;
 }
 
+extern "C" EUserHasLicenseForAppResult SteamAPI_ISteamUser_UserHasLicenseForApp(ISteamUser* self, uint64 steamID, AppId_t appID) {
+    spdlog::info("SteamAPI_ISteamUser_UserHasLicenseForApp called (flat API) appID {}", appID);
+    if (is_dlc_unlocked(appID)) {
+        spdlog::info("SteamAPI_ISteamUser_UserHasLicenseForApp result: owned");
+        return (EUserHasLicenseForAppResult)0;
+    }
+    spdlog::info("SteamAPI_ISteamUser_UserHasLicenseForApp result: not owned");
+    return (EUserHasLicenseForAppResult)2;
+}
+
 extern "C" void* S_CALLTYPE SteamInternal_FindOrCreateUserInterface(HSteamUser hSteamUser, const char *pszVersion) {
     ensure_realdlsym();
     void* S_CALLTYPE (*real)(HSteamUser hSteamUser, const char *pszVersion);
     *(void**)(&real) = real_dlsym(RTLD_NEXT, "SteamInternal_FindOrCreateUserInterface");
     spdlog::info("SteamInternal_FindOrCreateUserInterface called pszVersion: {}", pszVersion);
-    // Steamapps Interface call is hooked here
-    if (strstr(pszVersion, STEAMAPPS_INTERFACE_VERSION_N008) == pszVersion) {
+    // Steamapps Interface call is hooked here (v008 and v009 share a vtable prefix, one wrapper is enough)
+    if (strstr(pszVersion, STEAMAPPS_INTERFACE_VERSION_N008) == pszVersion ||
+        strstr(pszVersion, STEAMAPPS_INTERFACE_VERSION_N009) == pszVersion) {
         ISteamApps* val = (ISteamApps*)real(hSteamUser, pszVersion);
-        spdlog::info("SteamInternal_FindOrCreateUserInterface hooked ISteamApps");
+        spdlog::info("SteamInternal_FindOrCreateUserInterface hooked ISteamApps {}", pszVersion);
         return Hookey_SteamApps(val);
     }
 
-    // Steamuser interface call is hooked here
-    if (strstr(pszVersion, STEAMUSER_INTERFACE_VERSION) == pszVersion) {
+    // SteamUser v022/v023 (GetAuthTicketForWebApi shifted the vtable)
+    if (strstr(pszVersion, STEAMUSER_INTERFACE_VERSION_022) == pszVersion ||
+        strstr(pszVersion, STEAMUSER_INTERFACE_VERSION_023) == pszVersion) {
         ISteamUser* val = (ISteamUser*)real(hSteamUser, pszVersion);
-        spdlog::info("SteamInternal_FindOrCreateUserInterface ISteamUser hook");
-        return Hookey_SteamUser(val);
+        spdlog::info("SteamInternal_FindOrCreateUserInterface ISteamUser hook {}", pszVersion);
+        return Hookey_SteamUser23(val);
     }
-    if (strstr(pszVersion, STEAMUSER_INTERFACE_VERSION_020) == pszVersion) {
-        ISteamUser* val = (ISteamUser*)real(hSteamUser, pszVersion);
-        spdlog::info("SteamInternal_FindOrCreateUserInterface ISteamUser(legacy) hook");
-        return Hookey_SteamUser(val);
+    // SteamUser v020/v021
+    if (strstr(pszVersion, STEAMUSER_INTERFACE_VERSION_020) == pszVersion ||
+        strstr(pszVersion, STEAMUSER_INTERFACE_VERSION_021) == pszVersion) {
+        ISteamUser021* val = (ISteamUser021*)real(hSteamUser, pszVersion);
+        spdlog::info("SteamInternal_FindOrCreateUserInterface ISteamUser(legacy) hook {}", pszVersion);
+        return Hookey_SteamUser21(val);
     }
     auto val = real(hSteamUser, pszVersion);
     return val;
@@ -501,37 +776,47 @@ extern "C" void* S_CALLTYPE SteamInternal_CreateInterface(const char *pszVersion
     *(void**)(&real) = real_dlsym(RTLD_NEXT, "SteamInternal_CreateInterface");
     spdlog::info("SteamInternal_CreateInterface called pszVersion: {}", pszVersion);
 
-    // Steamapps Interface call is hooked here
-    if (strstr(pszVersion, STEAMAPPS_INTERFACE_VERSION_N008) == pszVersion) {
+    // Steamapps Interface call is hooked here (v008 and v009 share a vtable prefix, one wrapper is enough)
+    if (strstr(pszVersion, STEAMAPPS_INTERFACE_VERSION_N008) == pszVersion ||
+        strstr(pszVersion, STEAMAPPS_INTERFACE_VERSION_N009) == pszVersion) {
         ISteamApps* val = (ISteamApps*)real(pszVersion);
-        spdlog::info("SteamInternal_CreateInterface hooked ISteamApps");
+        spdlog::info("SteamInternal_CreateInterface hooked ISteamApps {}", pszVersion);
         return Hookey_SteamApps(val);
     }
 
-    // Steamuser interface call is hooked here
-    if (strstr(pszVersion, STEAMUSER_INTERFACE_VERSION) == pszVersion) {
+    // SteamUser v022/v023 (GetAuthTicketForWebApi shifted the vtable)
+    if (strstr(pszVersion, STEAMUSER_INTERFACE_VERSION_022) == pszVersion ||
+        strstr(pszVersion, STEAMUSER_INTERFACE_VERSION_023) == pszVersion) {
         ISteamUser* val = (ISteamUser*)real(pszVersion);
-        spdlog::info("SteamInternal_CreateInterface ISteamUser hook");
-        return Hookey_SteamUser(val);
+        spdlog::info("SteamInternal_CreateInterface ISteamUser hook {}", pszVersion);
+        return Hookey_SteamUser23(val);
     }
 
-    if (strstr(pszVersion, STEAMUSER_INTERFACE_VERSION_020) == pszVersion) {
-        ISteamUser* val = (ISteamUser*)real(pszVersion);
-        spdlog::info("SteamInternal_CreateInterface ISteamUser(legacy) hook");
-        return Hookey_SteamUser(val);
+    // SteamUser v020/v021
+    if (strstr(pszVersion, STEAMUSER_INTERFACE_VERSION_020) == pszVersion ||
+        strstr(pszVersion, STEAMUSER_INTERFACE_VERSION_021) == pszVersion) {
+        ISteamUser021* val = (ISteamUser021*)real(pszVersion);
+        spdlog::info("SteamInternal_CreateInterface ISteamUser(legacy) hook {}", pszVersion);
+        return Hookey_SteamUser21(val);
     }
 
-
-    if (strstr(pszVersion, STEAMCLIENT_INTERFACE_VERSION_017) == pszVersion) {
+    // SteamClient v021/v022/v023
+    if (strstr(pszVersion, STEAMCLIENT_INTERFACE_VERSION_021) == pszVersion ||
+        strstr(pszVersion, STEAMCLIENT_INTERFACE_VERSION_022) == pszVersion ||
+        strstr(pszVersion, STEAMCLIENT_INTERFACE_VERSION_023) == pszVersion) {
         ISteamClient* val = (ISteamClient*)real(pszVersion);
-        spdlog::info("SteamInternal_CreateInterface ISteamClient(legacy) hook");
-        return Hookey_SteamClient(val);
+        spdlog::info("SteamInternal_CreateInterface ISteamClient hook {}", pszVersion);
+        return Hookey_SteamClient23(val);
     }
 
-    if (strstr(pszVersion, STEAMCLIENT_INTERFACE_VERSION_019) == pszVersion) {
-        ISteamClient* val = (ISteamClient*)real(pszVersion);
-        spdlog::info("SteamInternal_CreateInterface ISteamClient(legacy) hook");
-        return Hookey_SteamClient(val);
+    // SteamClient v017-v020 (legacy, vtable compatible)
+    if (strstr(pszVersion, STEAMCLIENT_INTERFACE_VERSION_017) == pszVersion ||
+        strstr(pszVersion, STEAMCLIENT_INTERFACE_VERSION_018) == pszVersion ||
+        strstr(pszVersion, STEAMCLIENT_INTERFACE_VERSION_019) == pszVersion ||
+        strstr(pszVersion, STEAMCLIENT_INTERFACE_VERSION_020) == pszVersion) {
+        ISteamClient020* val = (ISteamClient020*)real(pszVersion);
+        spdlog::info("SteamInternal_CreateInterface ISteamClient(legacy) hook {}", pszVersion);
+        return Hookey_SteamClient20(val);
     }
 
     auto val = real(pszVersion);
@@ -539,6 +824,8 @@ extern "C" void* S_CALLTYPE SteamInternal_CreateInterface(const char *pszVersion
 }
 
 // for older games
+// NOTE: the v009/v023 headers define inline accessors with these names; we export our
+// own symbols instead so old binaries that link SteamApps()/SteamUser() directly get hooked.
 extern "C" ISteamApps *S_CALLTYPE SteamApps() {
     ensure_realdlsym();
     spdlog::info("SteamApps() called");
@@ -560,7 +847,8 @@ extern "C" ISteamUser *S_CALLTYPE SteamUser() {
     *(void**)(&real) = real_dlsym(RTLD_NEXT, "SteamUser");
     ISteamUser* val = (ISteamUser*)real();
     //return val;
-    return Hookey_SteamUser(val);
+    // legacy accessor: games on old SDKs expect the SteamUser020/021 vtable
+    return (ISteamUser*)Hookey_SteamUser21((ISteamUser021*)val);
 }
 
 // disabled for now due to PAYDAY 2 launch issues (Paradox launcher will show 'Not owned' without this)

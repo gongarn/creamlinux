@@ -1,27 +1,20 @@
-//========= Copyright © 1996-2008, Valve LLC, All rights reserved. ============
-//
-// Purpose:
-//
-//=============================================================================
+//========= Copyright 1996-2022, Valve LLC, All rights reserved. ============
 
 #ifndef STEAMTYPES_H
 #define STEAMTYPES_H
-#ifdef _WIN32
-#pragma once
-#endif
 
 #define S_CALLTYPE __cdecl
+// WARNING: __cdecl is potentially #defined away in steam_api_common.h
 
 // Steam-specific types. Defined here so this header file can be included in other code bases.
 #ifndef WCHARTYPES_H
 typedef unsigned char uint8;
 #endif
 
-#if defined( __GNUC__ ) && !defined(_WIN32) && !defined(POSIX)
+#ifdef __GNUC__
 	#if __GNUC__ < 4
 		#error "Steamworks requires GCC 4.X (4.2 or 4.4 have been tested)"
 	#endif
-	#define POSIX 1
 #endif
 
 #if defined(__LP64__) || defined(__x86_64__) || defined(_WIN64) || defined(__aarch64__) || defined(__s390x__)
@@ -29,10 +22,6 @@ typedef unsigned char uint8;
 #endif
 
 #if !defined(VALVE_BIG_ENDIAN)
-#if defined(_PS3)
-// Make sure VALVE_BIG_ENDIAN gets set on PS3, may already be set previously in Valve internal code.
-#define VALVE_BIG_ENDIAN 1
-#endif
 #if defined( __GNUC__ ) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #define VALVE_BIG_ENDIAN 1
 #endif
@@ -97,7 +86,7 @@ typedef uint32 DepotId_t;
 const DepotId_t k_uDepotIdInvalid = 0x0;
 
 // RTime32.  Seconds elapsed since Jan 1 1970, i.e. unix timestamp.
-// It's the same as time_t, but it is always 32-bit and unsigned.  
+// It's the same as time_t, but it is always 32-bit and unsigned.
 typedef uint32 RTime32;
 
 // handle to a Steam API call
@@ -105,6 +94,7 @@ typedef uint64 SteamAPICall_t;
 const SteamAPICall_t k_uAPICallInvalid = 0x0;
 
 typedef uint32 AccountID_t;
+const AccountID_t k_uAccountIdInvalid = 0;
 
 // Party Beacon ID
 typedef uint64 PartyBeaconID_t;
@@ -120,66 +110,40 @@ enum ESteamIPType
 
 struct SteamIPAddress_t
 {
-	union {
+	union x {
 
 		uint32			m_unIPv4;		// Host order
 		uint8			m_rgubIPv6[16];		// Network order! Same as inaddr_in6.  (0011:2233:4455:6677:8899:aabb:ccdd:eeff)
 
 		// Internal use only
 		uint64			m_ipv6Qword[2];	// big endian
-	};
+	} x;
 
 	ESteamIPType m_eType;
 
 	bool IsSet() const 
 	{ 
-		if ( k_ESteamIPTypeIPv4 == m_eType )
-		{
-			return m_unIPv4 != 0;
-		}
-		else 
-		{
-			return m_ipv6Qword[0] !=0 || m_ipv6Qword[1] != 0; 
-		}
+            return true;
 	}
 
 	static SteamIPAddress_t IPv4Any()
 	{
-		SteamIPAddress_t ipOut;
-		ipOut.m_eType = k_ESteamIPTypeIPv4;
-		ipOut.m_unIPv4 = 0;
-
-		return ipOut;
+            return {};
 	}
 
 	static SteamIPAddress_t IPv6Any()
 	{
-		SteamIPAddress_t ipOut;
-		ipOut.m_eType = k_ESteamIPTypeIPv6;
-		ipOut.m_ipv6Qword[0] = 0;
-		ipOut.m_ipv6Qword[1] = 0;
-
-		return ipOut;
+            return {};
 	}
 
 	static SteamIPAddress_t IPv4Loopback()
 	{
-		SteamIPAddress_t ipOut;
-		ipOut.m_eType = k_ESteamIPTypeIPv4;
-		ipOut.m_unIPv4 = 0x7f000001;
-
-		return ipOut;
+            return {};
 	}
 
 	static SteamIPAddress_t IPv6Loopback()
 	{
-		SteamIPAddress_t ipOut;
-		ipOut.m_eType = k_ESteamIPTypeIPv6;
-		ipOut.m_ipv6Qword[0] = 0;
-		ipOut.m_ipv6Qword[1] = 0;
-		ipOut.m_rgubIPv6[15] = 1;
-
-		return ipOut;
+            return {};
 	}
 };
 

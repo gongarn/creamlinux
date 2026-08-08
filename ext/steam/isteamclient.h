@@ -1,4 +1,4 @@
-﻿//====== Copyright Valve Corporation, All rights reserved. ====================
+//====== Copyright Valve Corporation, All rights reserved. ====================
 //
 // Internal low-level access to Steamworks interfaces.
 //
@@ -91,11 +91,8 @@ public:
 	// user screenshots
 	virtual ISteamScreenshots *GetISteamScreenshots( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) = 0;
 
-	// game search
-	virtual ISteamGameSearch *GetISteamGameSearch( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) = 0;
-
 	// Deprecated. Applications should use SteamAPI_RunCallbacks() or SteamGameServer_RunCallbacks() instead.
-	virtual void RunFrame() = 0;
+	STEAM_PRIVATE_API( virtual void RunFrame() = 0; )
 
 	// returns the number of IPC calls made since the last time this function was called
 	// Used for perf debugging so you can understand how many IPC calls your game makes per frame
@@ -115,31 +112,22 @@ public:
 	// Expose HTTP interface
 	virtual ISteamHTTP *GetISteamHTTP( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) = 0;
 
-	// Deprecated - the ISteamUnifiedMessages interface is no longer intended for public consumption.
-	virtual void *DEPRECATED_GetISteamUnifiedMessages( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) = 0 ;
-
 	// Exposes the ISteamController interface - deprecated in favor of Steam Input
 	virtual ISteamController *GetISteamController( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) = 0;
 
 	// Exposes the ISteamUGC interface
 	virtual ISteamUGC *GetISteamUGC( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) = 0;
 
-	// returns app list interface, only available on specially registered apps
-	virtual ISteamAppList *GetISteamAppList( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) = 0;
-	
 	// Music Player
 	virtual ISteamMusic *GetISteamMusic( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) = 0;
-
-	// Music Player Remote
-	virtual ISteamMusicRemote *GetISteamMusicRemote(HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion) = 0;
 
 	// html page display
 	virtual ISteamHTMLSurface *GetISteamHTMLSurface(HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion) = 0;
 
 	// Helper functions for internal Steam usage
-	virtual void DEPRECATED_Set_SteamAPI_CPostAPIResultInProcess( void (*)() ) = 0;
-	virtual void DEPRECATED_Remove_SteamAPI_CPostAPIResultInProcess( void (*)() ) = 0;
-	virtual void Set_SteamAPI_CCheckCallbackRegisteredInProcess( SteamAPI_CheckCallbackRegistered_t func ) = 0;
+	STEAM_PRIVATE_API( virtual void DEPRECATED_Set_SteamAPI_CPostAPIResultInProcess( void (*)() ) = 0; )
+	STEAM_PRIVATE_API( virtual void DEPRECATED_Remove_SteamAPI_CPostAPIResultInProcess( void (*)() ) = 0; )
+	STEAM_PRIVATE_API( virtual void Set_SteamAPI_CCheckCallbackRegisteredInProcess( SteamAPI_CheckCallbackRegistered_t func ) = 0; )
 
 	// inventory
 	virtual ISteamInventory *GetISteamInventory( HSteamUser hSteamuser, HSteamPipe hSteamPipe, const char *pchVersion ) = 0;
@@ -159,15 +147,16 @@ public:
 	// Steam Remote Play interface
 	virtual ISteamRemotePlay *GetISteamRemotePlay( HSteamUser hSteamUser, HSteamPipe hSteamPipe, const char *pchVersion ) = 0;
 
-	virtual void DestroyAllInterfaces() = 0;
+	STEAM_PRIVATE_API( virtual void DestroyAllInterfaces() = 0; )
 
 };
-#define STEAMCLIENT_INTERFACE_VERSION		"SteamClient020"
+#define STEAMCLIENT_INTERFACE_VERSION		"SteamClient023"
 
 #ifndef STEAM_API_EXPORTS
 
 // Global ISteamClient interface accessor
 //inline ISteamClient *SteamClient();
+// creamlinux exports its own SteamClient() hook symbol (see main.cpp)
 //STEAM_DEFINE_INTERFACE_ACCESSOR( ISteamClient *, SteamClient, SteamInternal_CreateInterface( STEAMCLIENT_INTERFACE_VERSION ), "global", STEAMCLIENT_INTERFACE_VERSION );
 
 // The internal ISteamClient used for the gameserver interface.
