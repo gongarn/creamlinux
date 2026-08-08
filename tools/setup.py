@@ -14,6 +14,8 @@ Usage:
   python3 tools/setup.py --dir /path/to/game --mode proton
   python3 tools/setup.py --dir /path/to/game --update-dlc 394360
   python3 tools/setup.py --dir /path/to/game --dry-run        # preview only
+  python3 tools/setup.py --scan                               # list installed Steam games
+  python3 tools/setup.py --install 394360                     # install unlocker for an appid
 
 Notes:
   - For native mode, creamlinux files are taken from the local checkout
@@ -72,11 +74,16 @@ def detect_mode(game_dir):
 
 
 def detect_bitness(game_dir):
-    if os.path.exists(os.path.join(game_dir, "steam_api64.dll")):
-        return 64
-    if os.path.exists(os.path.join(game_dir, "steam_api.dll")):
-        return 32
-    return None
+    """Return (bitness, dll_dir) or (None, None). dll_dir is where the
+    Steam API dll lives - the proxy dll must be placed next to it (i.e.
+    next to the game executable)."""
+    found_type, api_path = find_steam_api_files(game_dir)
+    if found_type != "proton" or api_path is None:
+        return None, None
+    dll_dir = os.path.dirname(api_path)
+    if os.path.basename(api_path) == "steam_api64.dll":
+        return 64, dll_dir
+    return 32, dll_dir
 
 
 # --------------------------------------------------------------- native ----
@@ -135,7 +142,7 @@ def download_smokeapi(cache_dir):
 
 
 def install_proton(game_dir, cache_dir, dry_run, verbose):
-    bitness = detect_bitness(game_dir)
+    bitness, dll_dir = detect_bitness(game_dir)
     if bitness is None:
         print("error: no steam_api.dll / steam_api64.dll found in the game "
               "directory - SmokeAPI cannot work here", file=sys.stderr)
@@ -153,13 +160,13 @@ def install_proton(game_dir, cache_dir, dry_run, verbose):
         target = "version.dll" if bitness == 64 else "winhttp.dll"
         if dry_run:
             print("Proton mode plan (hook mode, self-hook):")
-            print(f"  extract {dll_name} -> {game_dir}/{target}")
+            print(f"  extract {dll_name} -> {dll_dir}/{target}")
             print("  copy cream_api.ini -> " + game_dir)
             return 0
         tmp = tempfile.mktemp(suffix=".dll")
         with open(tmp, "wb") as out:
             out.write(zf.read(dll_name))
-        shutil.copy2(tmp, os.path.join(game_dir, target))
+        shutil.copy2(tmp, os.path.join(dll_dir, target))
         os.remove(tmp)
     # share the DLC list
     dist = find_creamlinux_dist()
@@ -177,20 +184,240 @@ def install_proton(game_dir, cache_dir, dry_run, verbose):
     return 0
 
 
+# ----------------------------------------------------------------- scan ----
+# Minimal VDF parser: "key" "value" pairs and "key" { ... } blocks.
+
+def parse_vdf(text):
+    tokens = []
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch in ' \t\r\n':
+            i += 1
+        elif ch == '"':
+            j = text.index('"', i + 1)
+            tokens.append(text[i + 1:j])
+            i = j + 1
+        elif ch == '{':
+            tokens.append("{")
+            i += 1
+        elif ch == '}':
+            tokens.append("}")
+            i += 1
+        else:
+            i += 1
+    return tokens
+
+
+def vdf_to_dict(tokens):
+    """Tokens -> nested dict; repeated keys become lists."""
+    def parse(pos):
+        result = {}
+        while pos < len(tokens):
+            key = tokens[pos]
+            if key == "}":
+                return result, pos + 1
+            if pos + 1 >= len(tokens):
+                break
+            nxt = tokens[pos + 1]
+            if nxt == "{":
+                value, pos = parse(pos + 2)
+            else:
+                value = nxt
+                pos += 2
+            if key in result:
+                if not isinstance(result[key], list):
+                    result[key] = [result[key]]
+                result[key].append(value)
+            else:
+                result[key] = value
+        return result, pos
+
+    result, _ = parse(0)
+    return result
+
+
+def find_steam_library_roots():
+    """Locate steamapps/libraryfolders.vdf across known install locations."""
+    candidates = []
+    home = os.path.expanduser("~")
+    for p in (os.path.join(home, ".steam", "steam"),
+              os.path.join(home, ".local", "share", "Steam"),
+              os.path.join(home, ".steam", "root")):
+        if os.path.isdir(p) and p not in candidates:
+            candidates.append(p)
+    vdfs = [os.path.join(p, "steamapps", "libraryfolders.vdf")
+            for p in candidates]
+    vdfs = [v for v in vdfs if os.path.exists(v)]
+    return vdfs
+
+
+def steam_libraries():
+    """Yield (library_path, steamapps_dir) for every Steam library folder."""
+    seen = set()
+    for vdf in find_steam_library_roots():
+        try:
+            with open(vdf, "r", encoding="utf-8", errors="replace") as fh:
+                data = vdf_to_dict(parse_vdf(fh.read()))
+        except Exception:  # noqa: BLE001
+            continue
+        folders = data.get("libraryfolders", {})
+        if isinstance(folders, dict):
+            for entry in folders.values():
+                if isinstance(entry, dict) and entry.get("path"):
+                    steamapps = os.path.join(entry["path"], "steamapps")
+                    if os.path.isdir(steamapps) and steamapps not in seen:
+                        seen.add(steamapps)
+                        yield entry["path"], steamapps
+        # legacy flat format: "0" "path"
+        if isinstance(folders, dict):
+            for value in folders.values():
+                if isinstance(value, str) and os.path.isdir(value):
+                    steamapps = os.path.join(value, "steamapps")
+                    if os.path.isdir(steamapps) and steamapps not in seen:
+                        seen.add(steamapps)
+                        yield value, steamapps
+
+
+TOOL_APPS = {  # Steam infrastructure, not games
+    "1070560": "Steam Linux Runtime 1.0 (scout)",
+    "1391110": "Steam Linux Runtime 3.0 (sniper)",
+    "1628350": "Steam Linux Runtime 4.0 (soldier)",
+    "1493710": "Steam Linux Runtime 5.0 (soldier)",
+    "4183110": "Steam Linux Runtime 4.0",
+    "228980": "Steamworks Common Redistributables",
+    "2805730": "Proton Experimental",
+}
+
+
+def find_steam_api_files(game_dir, max_depth=3):
+    """Find libsteam_api.so / steam_api*.dll inside a game folder.
+    Returns ('native', path) or ('proton', path) or (None, None)."""
+    root_depth = game_dir.rstrip(os.sep).count(os.sep)
+    for dirpath, dirnames, filenames in os.walk(game_dir):
+        depth = dirpath.rstrip(os.sep).count(os.sep) - root_depth
+        if depth >= max_depth:
+            dirnames[:] = []
+            continue
+        for fname in filenames:
+            if fname == "libsteam_api.so":
+                return "native", os.path.join(dirpath, fname)
+            if fname in ("steam_api.dll", "steam_api64.dll"):
+                return "proton", os.path.join(dirpath, fname)
+        if depth >= max_depth - 1:
+            dirnames[:] = []
+    return None, None
+
+
+def scan_games():
+    """Return list of dicts: appid, name, installdir, lib_path, game_dir,
+    game_type ('native'/'proton'/None), installed ('creamlinux'/'smokeapi'/None)."""
+    games = []
+    for lib_path, steamapps in steam_libraries():
+        for acf in sorted(os.listdir(steamapps)):
+            if not (acf.startswith("appmanifest_") and acf.endswith(".acf")):
+                continue
+            appid = acf[len("appmanifest_"):-len(".acf")]
+            if appid in TOOL_APPS:
+                continue
+            try:
+                with open(os.path.join(steamapps, acf), "r",
+                          encoding="utf-8", errors="replace") as fh:
+                    data = vdf_to_dict(parse_vdf(fh.read()))
+                state = data.get("AppState", {})
+            except Exception:  # noqa: BLE001
+                continue
+            name = state.get("name", "?")
+            installdir = state.get("installdir", "")
+            if not installdir:
+                continue
+            game_dir = os.path.join(lib_path, "steamapps", "common", installdir)
+            if not os.path.isdir(game_dir):
+                continue
+            game_type = None
+            installed = None
+            found_type, api_path = find_steam_api_files(game_dir)
+            if found_type == "native":
+                game_type = "native"
+                if (os.path.exists(os.path.join(game_dir, "cream.sh")) and
+                        os.path.exists(os.path.join(game_dir, "cream_api.ini"))):
+                    installed = "creamlinux"
+            elif found_type == "proton":
+                game_type = "proton"
+                if (os.path.exists(os.path.join(game_dir, "version.dll")) or
+                        os.path.exists(os.path.join(game_dir, "winhttp.dll"))):
+                    installed = "smokeapi"
+            games.append({"appid": appid, "name": name, "game_dir": game_dir,
+                          "game_type": game_type, "installed": installed})
+    return games
+
+
+def cmd_scan(args):
+    games = scan_games()
+    if not games:
+        print("No Steam games found (checked libraryfolders.vdf in "
+              "~/.steam, ~/.local/share/Steam).")
+        return 1
+    print(f"{'APPID':<10}{'TYPE':<8}{'UNLOCKER':<12}GAME")
+    print("-" * 70)
+    for g in sorted(games, key=lambda x: x["name"].lower()):
+        print(f"{g['appid']:<10}{str(g['game_type'] or '-'):<8}"
+              f"{str(g['installed'] or '-'):<12}{g['name']}")
+    print()
+    print("Install with:  python3 tools/setup.py --install <APPID>")
+    return 0
+
+
+def cmd_install(args):
+    games = scan_games()
+    match = [g for g in games if g["appid"] == str(args.install)]
+    if not match:
+        print(f"error: app {args.install} not found in Steam libraries",
+              file=sys.stderr)
+        return 1
+    game = match[0]
+    print(f"Installing unlocker for {game['name']} "
+          f"({game['game_type']}, {game['game_dir']})")
+    if game["game_type"] == "native":
+        dist = find_creamlinux_dist()
+        if dist is None:
+            print("error: no local creamlinux build found; run 'sh ./build.sh' "
+                  "first or pass --dir with a prebuilt dist", file=sys.stderr)
+            return 1
+        return install_native(game["game_dir"], dist, args.dry_run, args.verbose)
+    if game["game_type"] == "proton":
+        cache = os.path.join(os.path.expanduser("~"), ".cache", "creamlinux")
+        return install_proton(game["game_dir"], cache, args.dry_run, args.verbose)
+    print(f"error: {game['name']} has no Steam API files "
+          "(libsteam_api.so / steam_api*.dll)", file=sys.stderr)
+    return 1
+
+
 # ----------------------------------------------------------------- main ----
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dir", required=True, help="game installation directory")
+    ap.add_argument("--dir", help="game installation directory")
     ap.add_argument("--mode", choices=["auto", "native", "proton"],
                     default="auto")
+    ap.add_argument("--scan", action="store_true",
+                    help="list installed Steam games and their unlocker status")
+    ap.add_argument("--install", type=int, metavar="APPID",
+                    help="install the unlocker for an installed Steam game")
     ap.add_argument("--update-dlc", type=int, metavar="APPID",
                     help="run tools/update-dlc.py for this app first")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the plan without changing anything")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
+
+    if args.scan:
+        return cmd_scan(args)
+    if args.install is not None:
+        return cmd_install(args)
+    if not args.dir:
+        ap.error("one of --dir, --scan or --install is required")
 
     game_dir = os.path.abspath(args.dir)
     if not os.path.isdir(game_dir):
