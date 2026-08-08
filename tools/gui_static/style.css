@@ -46,7 +46,9 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; }
 body.busy .busy-hide { display: block; }
 body.busy .stat span { color: var(--green); }
 
-#toolbar { display: flex; gap: 10px; margin-bottom: 14px; }
+#toolbar { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; }
+#toolbar .spacer { flex: 1; }
+td input[type=checkbox] { cursor: pointer; }
 
 table { width: 100%; border-collapse: collapse; background: var(--bg2); }
 th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); }

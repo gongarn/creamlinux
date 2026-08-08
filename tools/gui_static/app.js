@@ -72,6 +72,7 @@ function renderGames() {
       btn.addEventListener("click", () => onAction(btn.dataset.act, g));
     });
     tr.innerHTML = `
+      <td><input type="checkbox" class="sel-game" data-appid="${g.appid}"></td>
       <td>${g.name}</td>
       <td class="muted">${g.appid}</td>
       <td>${badge(g.game_type)}</td>
@@ -80,6 +81,9 @@ function renderGames() {
     tr.appendChild(actions);
     tbody.appendChild(tr);
   });
+  const selAll = $("#sel-all");
+  if (selAll) selAll.checked = false;
+  updateSelection();
 
   $("#stat-total").textContent = total;
   $("#stat-native").textContent = native;
@@ -135,21 +139,41 @@ function closeModal() {
   $("#modal-root").innerHTML = "";
 }
 
+/* ------------------------------------------------------------ selection -- */
+
+function selectedGames() {
+  const ids = [...document.querySelectorAll(".sel-game:checked")]
+    .map((cb) => cb.dataset.appid);
+  return games.filter((g) => ids.includes(g.appid));
+}
+
+function updateSelection() {
+  const sel = selectedGames();
+  const count = sel.length;
+  $("#sel-count").textContent = count ? `Выбрано: ${count}` : "";
+  $("#btn-install-sel").disabled = count === 0;
+  $("#btn-uninstall-sel").disabled = count === 0;
+}
+
 /* -------------------------------------------------------------- actions -- */
 
 function onAction(act, game) {
-  if (act === "install") modalInstall(game);
-  else if (act === "uninstall") modalUninstall(game);
+  if (act === "install") modalInstall([game]);
+  else if (act === "uninstall") modalUninstall([game]);
   else if (act === "config") modalConfig(game);
   else if (act === "dlc") modalDlc(game);
   else if (act === "folder") api("/api/open-folder", {method: "POST",
     body: {appid: game.appid}}).catch((e) => alert(e.message));
 }
 
-function modalInstall(game) {
+function modalInstall(gamesSel) {
+  const game = gamesSel[0];
   const isNative = game.game_type === "native";
+  const title = gamesSel.length > 1
+    ? `Установка — ${gamesSel.length} игр`
+    : `Установка — ${game.name}`;
   const root = openModal(
-    `Установка — ${game.name}`,
+    title,
     `<label class="row">Тип: ${badge(game.game_type)}</label>
      ${isNative ? `<p class="hint">creamlinux (LD_PRELOAD) будет скопирован в папку игры.
        Потребуется указать launch options: <b>sh ./cream.sh %command%</b></p>` : `
@@ -171,7 +195,8 @@ function modalInstall(game) {
      <button id="mi-close">Отмена</button>`);
 
   const go = (dry) => {
-    const body = {appid: game.appid, unlockall: $("#mi-unlockall").checked};
+    const body = {appids: gamesSel.map((g) => g.appid),
+                  unlockall: $("#mi-unlockall").checked};
     if (!isNative) body.smokeapi_mode = $("#mi-mode").value;
     if (dry) body.dry_run = true;
     api("/api/install", {method: "POST", body})
@@ -183,9 +208,13 @@ function modalInstall(game) {
   $("#mi-close").addEventListener("click", closeModal);
 }
 
-function modalUninstall(game) {
+function modalUninstall(gamesSel) {
+  const game = gamesSel[0];
+  const title = gamesSel.length > 1
+    ? `Удаление — ${gamesSel.length} игр`
+    : `Удаление — ${game.name}`;
   const root = openModal(
-    `Удаление — ${game.name}`,
+    title,
     `<label class="row">Удалить также cream_api.ini
        <input type="checkbox" id="ui-ini" checked></label>
      <p class="hint">Для Proton будет восстановлен оригинальный steam_api(64).dll.</p>`,
@@ -193,7 +222,8 @@ function modalUninstall(game) {
      <button id="ui-close">Отмена</button>`);
   $("#ui-go").addEventListener("click", () => {
     api("/api/uninstall", {method: "POST",
-      body: {appid: game.appid, remove_ini: $("#ui-ini").checked}})
+      body: {appids: gamesSel.map((g) => g.appid),
+             remove_ini: $("#ui-ini").checked}})
       .then(() => { closeModal(); openLog(); })
       .catch((e) => alert(e.message));
   });
@@ -307,6 +337,23 @@ $("#btn-log-close").addEventListener("click", closeLog);
 $("#search").addEventListener("input", renderGames);
 $("#filter-type").addEventListener("change", renderGames);
 $("#filter-status").addEventListener("change", renderGames);
+$("#sel-all").addEventListener("change", (e) => {
+  document.querySelectorAll(".sel-game").forEach((cb) => {
+    cb.checked = e.target.checked;
+  });
+  updateSelection();
+});
+$("#games tbody").addEventListener("change", (e) => {
+  if (e.target.classList.contains("sel-game")) updateSelection();
+});
+$("#btn-install-sel").addEventListener("click", () => {
+  const sel = selectedGames();
+  if (sel.length) modalInstall(sel);
+});
+$("#btn-uninstall-sel").addEventListener("click", () => {
+  const sel = selectedGames();
+  if (sel.length) modalUninstall(sel);
+});
 
 refresh();
 setInterval(() => {

@@ -100,15 +100,25 @@ def read_json_body(handler):
         return {}
 
 
-def require_game(handler, body):
-    """Resolve appid -> game dict via scan (never trust raw paths)."""
-    appid = str(body.get("appid", ""))
-    game = creamlib.find_game(appid)
-    if game is None:
-        json_response(handler, {"error": f"app {appid} not found in Steam "
-                                          "libraries"}, status=404)
+def require_games(handler, body):
+    """Resolve appid(s) -> game dicts via scan (never trust raw paths).
+    Accepts either a single 'appid' or an 'appids' list."""
+    raw = body.get("appids")
+    if raw is None and body.get("appid") is not None:
+        raw = [body.get("appid")]
+    if not isinstance(raw, list) or not raw:
+        json_response(handler, {"error": "appids list is required"}, status=400)
         return None
-    return game
+    games = {g["appid"]: g for g in creamlib.scan_games()}
+    result = []
+    for appid in raw:
+        game = games.get(str(appid))
+        if game is None:
+            json_response(handler, {"error": f"app {appid} not found in Steam "
+                                              "libraries"}, status=404)
+            return None
+        result.append(game)
+    return result
 
 
 # ------------------------------------------------------------------ API ----
@@ -128,8 +138,8 @@ def api_games(handler):
 
 
 def api_install(handler, body):
-    game = require_game(handler, body)
-    if game is None:
+    games = require_games(handler, body)
+    if games is None:
         return
     mode = body.get("smokeapi_mode", "hook")
     unlockall = body.get("unlockall", False)
@@ -140,30 +150,31 @@ def api_install(handler, body):
         return
 
     def job():
-        log_line(f"=== Installing for {game['name']} "
-                 f"({game['game_type']}, {game['game_dir']}) ===")
-        if game["game_type"] == "native":
-            dist = creamlib.find_creamlinux_dist()
-            if dist is None:
-                log_line("error: no local creamlinux build found; "
-                         "run 'sh ./build.sh' first")
-                return
-            creamlib.install_native(game["game_dir"], dist, dry_run,
-                                    verbose=False, log=log_line)
-        elif game["game_type"] == "proton":
-            creamlib.install_proton(game["game_dir"], dry_run=dry_run,
-                                    mode=mode, log=log_line)
-        else:
-            log_line("error: no Steam API files found in this game")
-            return
-        if unlockall and not dry_run:
-            ini = creamlib.read_game_ini(game["game_dir"]) or {}
-            config = ini.get("config", {})
-            config["unlockall"] = "true"
-            creamlib.write_game_ini(
-                game["game_dir"], config, ini.get("methods", {}),
-                ini.get("dlc", []), log=log_line)
-            log_line("unlockall = true written to cream_api.ini")
+        for game in games:
+            log_line(f"=== Installing for {game['name']} "
+                     f"({game['game_type']}, {game['game_dir']}) ===")
+            if game["game_type"] == "native":
+                dist = creamlib.find_creamlinux_dist()
+                if dist is None:
+                    log_line("error: no local creamlinux build found; "
+                             "run 'sh ./build.sh' first")
+                    continue
+                creamlib.install_native(game["game_dir"], dist, dry_run,
+                                        verbose=False, log=log_line)
+            elif game["game_type"] == "proton":
+                creamlib.install_proton(game["game_dir"], dry_run=dry_run,
+                                        mode=mode, log=log_line)
+            else:
+                log_line("error: no Steam API files found in this game")
+                continue
+            if unlockall and not dry_run:
+                ini = creamlib.read_game_ini(game["game_dir"]) or {}
+                config = ini.get("config", {})
+                config["unlockall"] = "true"
+                creamlib.write_game_ini(
+                    game["game_dir"], config, ini.get("methods", {}),
+                    ini.get("dlc", []), log=log_line)
+                log_line("unlockall = true written to cream_api.ini")
         log_line("=== Done ===")
 
     try:
@@ -175,21 +186,22 @@ def api_install(handler, body):
 
 
 def api_uninstall(handler, body):
-    game = require_game(handler, body)
-    if game is None:
+    games = require_games(handler, body)
+    if games is None:
         return
     remove_ini = bool(body.get("remove_ini", True))
 
     def job():
-        log_line(f"=== Removing unlocker from {game['name']} ===")
-        if game["game_type"] == "native":
-            creamlib.uninstall_native(game["game_dir"],
-                                      remove_ini=remove_ini, log=log_line)
-        elif game["game_type"] == "proton":
-            creamlib.uninstall_proton(game["game_dir"],
-                                      remove_ini=remove_ini, log=log_line)
-        else:
-            log_line("Nothing to uninstall.")
+        for game in games:
+            log_line(f"=== Removing unlocker from {game['name']} ===")
+            if game["game_type"] == "native":
+                creamlib.uninstall_native(game["game_dir"],
+                                          remove_ini=remove_ini, log=log_line)
+            elif game["game_type"] == "proton":
+                creamlib.uninstall_proton(game["game_dir"],
+                                          remove_ini=remove_ini, log=log_line)
+            else:
+                log_line("Nothing to uninstall.")
         log_line("=== Done ===")
 
     try:
@@ -199,11 +211,11 @@ def api_uninstall(handler, body):
         return
     json_response(handler, {"started": True})
 
-
 def api_dlc_update(handler, body):
-    game = require_game(handler, body)
+    game = require_games(handler, body)
     if game is None:
         return
+    game = game[0]
     dry_run = bool(body.get("dry_run"))
 
     def job():
@@ -220,7 +232,10 @@ def api_dlc_update(handler, body):
 
 
 def api_game_config(handler, body):
-    game = require_game(handler, body)
+    games = require_games(handler, body)
+    if games is None:
+        return
+    game = games[0]
     if game is None:
         return
     if body.get("read"):
@@ -254,7 +269,10 @@ def api_log(handler):
 
 
 def api_open_folder(handler, body):
-    game = require_game(handler, body)
+    games = require_games(handler, body)
+    if games is None:
+        return
+    game = games[0]
     if game is None:
         return
     path = game["game_dir"]

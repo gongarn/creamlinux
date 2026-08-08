@@ -36,11 +36,15 @@
       <option value="none">без unlocker</option>
       <option value="installed">с unlocker</option>
     </select>
+    <span class="spacer"></span>
+    <span id="sel-count" class="muted"></span>
+    <button id="btn-install-sel" class="primary" disabled>Установить выбранные</button>
+    <button id="btn-uninstall-sel" class="danger" disabled>Удалить выбранные</button>
   </section>
 
   <table id="games">
     <thead>
-      <tr><th>Игра</th><th>AppID</th><th>Тип</th><th>Статус</th><th>DLC файлы</th><th>Действия</th></tr>
+      <tr><th><input type="checkbox" id="sel-all" title="Выбрать все"></th><th>Игра</th><th>AppID</th><th>Тип</th><th>Статус</th><th>DLC файлы</th><th>Действия</th></tr>
     </thead>
     <tbody></tbody>
   </table>
