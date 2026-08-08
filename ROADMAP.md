@@ -27,7 +27,9 @@ plus a single install tool covering both native and Proton titles.
 - Hooks for new init paths: SteamInternal_ContextInit, dlvsym, SteamClient()
   accessor behind an ini flag (disabled due to PAYDAY 2)
 - Release v2.3.0 with zip artifact (CI ready; setup.py can then download it)
-- Real-game testing: CK3 (#71), Dead Cells (#29), MangoHud (#51), HOI4
+- Real-game testing: **HOI4 confirmed working** (native, unlockall,
+  installed via web UI); still to verify: CK3 (#71), Dead Cells (#29),
+  MangoHud (#51), Proton path (SmokeAPI)
 - PR back to anticitizn/creamlinux (interface fixes)
 - README: tested-games table from issues
 - Uplay/Epic support - intentionally out of scope (Steam only)
