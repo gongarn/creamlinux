@@ -59,6 +59,11 @@ jobs:
       working-directory: ${{ github.workspace }}/build/64
       run: ctest --output-on-failure
 
+    - name: Run Python tests and syntax checks
+      run: |
+        python3 -m py_compile tools/*.py
+        python3 -m unittest discover -s tools/tests
+
     - name: Create GitHub Release
       if: github.event_name == 'workflow_dispatch' && github.event.inputs.releaseTag != ''
       env:
