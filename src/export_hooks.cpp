@@ -39,7 +39,17 @@ void* (*real_dlsym)(void *handle, const char *name);
 //TODO: hook dlvsym as well (would need a bootstrap-safe resolver)
 void ensure_realdlsym() {
     if (real_dlsym == NULL) {
+        // The x86-64 ABI exports dlsym as GLIBC_2.2.5, but the i386 ABI
+        // uses GLIBC_2.0 (and GLIBC_2.34 on glibc >= 2.34). Trying only the
+        // 64-bit version string left real_dlsym NULL in 32-bit builds, so
+        // ANY dlsym() call in a 32-bit process with creamlinux preloaded
+        // (e.g. the 32-bit Paradox launcher 'dowser') crashed with a NULL
+        // call - showing up as "Killed"/SIGSEGV (issues #51, #56).
         *(void **)(&real_dlsym) = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.2.5");
+        if (real_dlsym == NULL)
+            *(void **)(&real_dlsym) = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.0");
+        if (real_dlsym == NULL)
+            *(void **)(&real_dlsym) = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.34");
     }
 }
 
@@ -345,6 +355,24 @@ extern "C" void *dlsym(void *handle, const char *name)
     //     filelog->info("custom: {0}, real: {1}", (void *)CreateInterface, real_dlsym(RTLD_NEXT, "CreateInterface"));
     //     return (void *)CreateInterface;
     // }
+
+    // Flat API interposition (issue #60): Mono-based Steamworks.NET games
+    // (e.g. Battletech) resolve the flat API via dlsym(handle) on the
+    // already-loaded libsteam_api.so, which bypasses LD_PRELOAD symbol
+    // interposition entirely. Hand out our DLC-related flat hooks for those
+    // names so the unlock logic applies there too. RTLD_NEXT stays real.
+    if (handle != RTLD_NEXT) {
+        if (!strcmp(name, "SteamAPI_ISteamApps_GetDLCCount"))
+            return (void *)SteamAPI_ISteamApps_GetDLCCount;
+        if (!strcmp(name, "SteamAPI_ISteamApps_BIsDlcInstalled"))
+            return (void *)SteamAPI_ISteamApps_BIsDlcInstalled;
+        if (!strcmp(name, "SteamAPI_ISteamApps_BIsSubscribedApp"))
+            return (void *)SteamAPI_ISteamApps_BIsSubscribedApp;
+        if (!strcmp(name, "SteamAPI_ISteamApps_BGetDLCDataByIndex"))
+            return (void *)SteamAPI_ISteamApps_BGetDLCDataByIndex;
+        if (!strcmp(name, "SteamAPI_ISteamUser_UserHasLicenseForApp"))
+            return (void *)SteamAPI_ISteamUser_UserHasLicenseForApp;
+    }
 
     return real_dlsym(handle,name);
 }

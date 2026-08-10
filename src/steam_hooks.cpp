@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <memory>
 
 #include "config.h"
 #include "interface_versions.h"
@@ -229,19 +228,21 @@ public:
     };
     ISteamUser021* real_steamUser;
 };
-static std::shared_ptr<Hookey_SteamApps_Class> steamapps_instance;
+// Fork safety (issue #56): Clausewitz-engine games (HOI4) fork() without
+// exec when restarting, and the forked child exits normally. Exit-time
+// destructors of static objects then run in the child's copy of the process;
+// a crash there surfaces as "Killed"/SIGSEGV right after launch. The wrapper
+// instances are therefore heap-allocated and intentionally never freed, so
+// their destructors never run - in parent or child.
+static Hookey_SteamApps_Class* steamapps_instance = nullptr;
 
 ISteamApps* Hookey_SteamApps(ISteamApps* real_steamApps) {
     if (steamapps_instance != NULL) {
-        ISteamApps* ptraccess = steamapps_instance.get();
-        auto debg = ptraccess->GetDLCCount();
-        return steamapps_instance.get();
-    } else {
-        Hookey_SteamApps_Class nhooky;
-        nhooky.real_steamApps = real_steamApps;
-        steamapps_instance = std::make_shared<Hookey_SteamApps_Class>(nhooky);
-        return Hookey_SteamApps(real_steamApps);
+        return steamapps_instance;
     }
+    steamapps_instance = new Hookey_SteamApps_Class();
+    steamapps_instance->real_steamApps = real_steamApps;
+    return steamapps_instance;
 }
 
 // ISteamUser v022/v023 wrapper: SteamUser022 added GetAuthTicketForWebApi in the middle of the
@@ -323,29 +324,25 @@ public:
     };
     ISteamUser* real_steamUser;
 };
-static std::shared_ptr<Hookey_SteamUser_Class21> steamuser21_instance;
-static std::shared_ptr<Hookey_SteamUser_Class23> steamuser23_instance;
+static Hookey_SteamUser_Class21* steamuser21_instance = nullptr;
+static Hookey_SteamUser_Class23* steamuser23_instance = nullptr;
 
 ISteamUser021* Hookey_SteamUser21(ISteamUser021* real_steamUser) {
     if (steamuser21_instance != NULL) {
-        return steamuser21_instance.get();
-    } else {
-        Hookey_SteamUser_Class21 nhooky;
-        nhooky.real_steamUser = real_steamUser;
-        steamuser21_instance = std::make_shared<Hookey_SteamUser_Class21>(nhooky);
-        return Hookey_SteamUser21(real_steamUser);
+        return steamuser21_instance;
     }
+    steamuser21_instance = new Hookey_SteamUser_Class21();
+    steamuser21_instance->real_steamUser = real_steamUser;
+    return steamuser21_instance;
 }
 
 ISteamUser* Hookey_SteamUser23(ISteamUser* real_steamUser) {
     if (steamuser23_instance != NULL) {
-        return steamuser23_instance.get();
-    } else {
-        Hookey_SteamUser_Class23 nhooky;
-        nhooky.real_steamUser = real_steamUser;
-        steamuser23_instance = std::make_shared<Hookey_SteamUser_Class23>(nhooky);
-        return Hookey_SteamUser23(real_steamUser);
+        return steamuser23_instance;
     }
+    steamuser23_instance = new Hookey_SteamUser_Class23();
+    steamuser23_instance->real_steamUser = real_steamUser;
+    return steamuser23_instance;
 }
 
 class Hookey_SteamClient_Class20 : public ISteamClient020 {
@@ -591,16 +588,28 @@ public:
     ISteamClient* real_steamClient;
 };
 
-static std::shared_ptr<Hookey_SteamClient_Class20> steamclient20_instance;
-static std::shared_ptr<Hookey_SteamClient_Class23> steamclient23_instance;
+static Hookey_SteamClient_Class20* steamclient20_instance = nullptr;
+static Hookey_SteamClient_Class23* steamclient23_instance = nullptr;
 
 ISteamClient020* Hookey_SteamClient20(ISteamClient020* real_steamClient) {
     if (steamclient20_instance != NULL) {
-        return steamclient20_instance.get();
-    } else {
-        Hookey_SteamClient_Class20 nhooky;
-        nhooky.real_steamClient = real_steamClient;
-        steamclient20_instance = std::make_shared<Hookey_SteamClient_Class20>(nhooky);
-        return Hookey_SteamClient20(real_steamClient);
+        return steamclient20_instance;
     }
+    steamclient20_instance = new Hookey_SteamClient_Class20();
+    steamclient20_instance->real_steamClient = real_steamClient;
+    return steamclient20_instance;
+}
+
+// NOTE: this factory was declared (steam_hooks.h) and called
+// (export_hooks.cpp) but never defined, leaving an undefined symbol in the
+// .so - any game resolving SteamClient v021-023 through
+// SteamInternal_CreateInterface would hit a symbol lookup error. Defined
+// here with the same leaky singleton pattern as the other wrappers.
+ISteamClient* Hookey_SteamClient23(ISteamClient* real_steamClient) {
+    if (steamclient23_instance != NULL) {
+        return steamclient23_instance;
+    }
+    steamclient23_instance = new Hookey_SteamClient_Class23();
+    steamclient23_instance->real_steamClient = real_steamClient;
+    return steamclient23_instance;
 }
