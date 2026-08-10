@@ -128,6 +128,15 @@ public:
     SteamAPICall_t GetFileDetails(const char* pszFileName) { return real_steamApps->GetFileDetails(pszFileName); }
     int GetLaunchCommandLine(char* pszCommandLine, int cubCommandLine) { return real_steamApps->GetLaunchCommandLine(pszCommandLine, cubCommandLine); }
 	virtual bool BIsTimedTrial( uint32* punSecondsAllowed, uint32* punSecondsPlayed ) { return real_steamApps->BIsTimedTrial(punSecondsAllowed, punSecondsPlayed); } 
+    // ---- ISteamApps v009 methods (STEAMAPPS_INTERFACE_VERSION009) ----
+    bool SetDlcContext( AppId_t nAppID ) { return real_steamApps->SetDlcContext(nAppID); }
+    int GetNumBetas( int *pnAvailable, int *pnPrivate ) { return real_steamApps->GetNumBetas(pnAvailable, pnPrivate); }
+    bool GetBetaInfo( int iBetaIndex, uint32 *punFlags, uint32 *punBuildID, char *pchBetaName, int cchBetaName, char *pchDescription, int cchDescription, uint32 *punLastUpdated ) {
+        return real_steamApps->GetBetaInfo(iBetaIndex, punFlags, punBuildID, pchBetaName, cchBetaName, pchDescription, cchDescription, punLastUpdated);
+    }
+    bool SetActiveBeta( const char *pchBetaName ) { return real_steamApps->SetActiveBeta(pchBetaName); }
+    void SetGamePerformanceSetting( EGamePerformanceSetting setting ) { return real_steamApps->SetGamePerformanceSetting(setting); }
+    void SetGameRenderResolution( uint32 unWidth, uint32 unHeight ) { return real_steamApps->SetGameRenderResolution(unWidth, unHeight); }
     ISteamApps* real_steamApps;
 };
 
@@ -428,6 +437,7 @@ ISteamClient* Hookey_SteamClient(ISteamClient* real_steamClient) {
 }
 
 #define STEAMAPPS_INTERFACE_VERSION_N008 "STEAMAPPS_INTERFACE_VERSION008"
+#define STEAMAPPS_INTERFACE_VERSION_N009 "STEAMAPPS_INTERFACE_VERSION009"
 
 #define STEAMUSER_INTERFACE_VERSION_020 "SteamUser020"
 #define STEAMUSER_INTERFACE_VERSION_021 "SteamUser021"
@@ -451,30 +461,18 @@ extern "C" void Steam_LogOn(HSteamUser hUser, HSteamPipe hSteamPipe, uint64 ulSt
     real(hUser, hSteamPipe, ulSteamID);
 }
 
-extern "C" bool SteamAPI_ISteamApps_BGetDLCDataByIndex(int iDLC, AppId_t* pAppID, bool* pbAvailable, char* pchName, int cchNameBufferSize) {
-        spdlog::info("SteamAPI_ISteamApps_BGetDLCDataByIndex called");
-        if ((size_t)iDLC >= dlcs.size()) {
-            return false;
-        }
-
-        *pAppID = std::get<0>(dlcs[iDLC]);
-        *pbAvailable = true;
-
-        const char* name = std::get<1>(dlcs[iDLC]).c_str();
-        size_t slen = std::min((size_t)cchNameBufferSize - 1, std::get<1>(dlcs[iDLC]).size());
-        memcpy((void*)pchName, (void*)name, slen);
-        *(pchName + slen) = 0x0;
-
-        return true;
-}
+// NOTE: the flat API hooks now live next to the dlsym() hook below - the
+// old SteamAPI_ISteamApps_BGetDLCDataByIndex here was missing the `self`
+// first argument, so 32-bit builds read the wrong stack slot.
 
 extern "C" void* S_CALLTYPE SteamInternal_FindOrCreateUserInterface(HSteamUser hSteamUser, const char *pszVersion) {
     ensure_realdlsym();
     void* S_CALLTYPE (*real)(HSteamUser hSteamUser, const char *pszVersion);
     *(void**)(&real) = real_dlsym(RTLD_NEXT, "SteamInternal_FindOrCreateUserInterface");
     spdlog::info("SteamInternal_FindOrCreateUserInterface called pszVersion: {}", pszVersion);
-    // Steamapps Interface call is hooked here
-    if (strstr(pszVersion, STEAMAPPS_INTERFACE_VERSION_N008) == pszVersion) {
+    // Steamapps Interface call is hooked here (v008 and v009 share a vtable prefix, one wrapper is enough)
+    if (strstr(pszVersion, STEAMAPPS_INTERFACE_VERSION_N008) == pszVersion ||
+        strstr(pszVersion, STEAMAPPS_INTERFACE_VERSION_N009) == pszVersion) {
         ISteamApps* val = (ISteamApps*)real(hSteamUser, pszVersion);
         spdlog::info("SteamInternal_FindOrCreateUserInterface hooked ISteamApps");
         return Hookey_SteamApps(val);
@@ -501,8 +499,9 @@ extern "C" void* S_CALLTYPE SteamInternal_CreateInterface(const char *pszVersion
     *(void**)(&real) = real_dlsym(RTLD_NEXT, "SteamInternal_CreateInterface");
     spdlog::info("SteamInternal_CreateInterface called pszVersion: {}", pszVersion);
 
-    // Steamapps Interface call is hooked here
-    if (strstr(pszVersion, STEAMAPPS_INTERFACE_VERSION_N008) == pszVersion) {
+    // Steamapps Interface call is hooked here (v008 and v009 share a vtable prefix, one wrapper is enough)
+    if (strstr(pszVersion, STEAMAPPS_INTERFACE_VERSION_N008) == pszVersion ||
+        strstr(pszVersion, STEAMAPPS_INTERFACE_VERSION_N009) == pszVersion) {
         ISteamApps* val = (ISteamApps*)real(pszVersion);
         spdlog::info("SteamInternal_CreateInterface hooked ISteamApps");
         return Hookey_SteamApps(val);
@@ -645,6 +644,71 @@ struct SContextInitData {
 // auto filelog = spdlog::basic_logger_mt("dlsym_log", "creamlinux_dlsym_log.txt", true);
 
 //TODO: add a flag to allow users to disable the dlsym hooking method
+// ---- Flat API hooks (steam_api_flat.h) ----
+// Some games (e.g. Unity/Steamworks.NET titles) call SteamAPI_ISteamApps_*
+// and SteamAPI_ISteamUser_* directly instead of going through the C++
+// interface accessors. Since creamlinux is LD_PRELOADed before
+// libsteam_api.so, these symbols interpose the real ones.
+// NOTE: the real flat API passes `self` as the first argument; it must stay
+// in the signature or 32-bit builds will read the wrong stack slot.
+
+extern "C" int SteamAPI_ISteamApps_GetDLCCount(ISteamApps* self) {
+    spdlog::info("SteamAPI_ISteamApps_GetDLCCount called (flat API)");
+    return (int)dlcs.size();
+}
+
+extern "C" bool SteamAPI_ISteamApps_BIsDlcInstalled(ISteamApps* self, AppId_t appID) {
+    spdlog::info("SteamAPI_ISteamApps_BIsDlcInstalled called (flat API) appID {}", appID);
+    return std::find_if(std::begin(dlcs), std::end(dlcs),
+        [&] (const tuple<int, string> a) { return std::get<0>(a) == appID; }) != std::end(dlcs);
+}
+
+extern "C" bool SteamAPI_ISteamApps_BIsSubscribedApp(ISteamApps* self, AppId_t appID) {
+    spdlog::info("SteamAPI_ISteamApps_BIsSubscribedApp called (flat API) appID {}", appID);
+    if (ini["methods"]["disable_steamapps_issubscribedapp"] == "true") {
+        return self->BIsSubscribedApp(appID);
+    }
+    auto reslt = std::find_if(std::begin(dlcs), std::end(dlcs),
+        [&] (const tuple<int, string> a) { return std::get<0>(a) == appID; }) != std::end(dlcs);
+    if (reslt) {
+        spdlog::info("SteamAPI_ISteamApps_BIsSubscribedApp unlocked {}", appID);
+        return true;
+    }
+    if (ini["config"]["issubscribedapp_on_false_use_real"] == "true") {
+        return self->BIsSubscribedApp(appID);
+    }
+    return false;
+}
+
+extern "C" bool SteamAPI_ISteamApps_BGetDLCDataByIndex(ISteamApps* self, int iDLC, AppId_t* pAppID, bool* pbAvailable, char* pchName, int cchNameBufferSize) {
+    spdlog::info("SteamAPI_ISteamApps_BGetDLCDataByIndex called (flat API)");
+    if ((size_t)iDLC >= dlcs.size()) {
+        return false;
+    }
+
+    *pAppID = std::get<0>(dlcs[iDLC]);
+    *pbAvailable = true;
+
+    const char* name = std::get<1>(dlcs[iDLC]).c_str();
+    size_t slen = std::min((size_t)cchNameBufferSize - 1, std::get<1>(dlcs[iDLC]).size());
+    memcpy((void*)pchName, (void*)name, slen);
+    *(pchName + slen) = 0x0;
+
+    return true;
+}
+
+extern "C" EUserHasLicenseForAppResult SteamAPI_ISteamUser_UserHasLicenseForApp(ISteamUser* self, uint64 steamID, AppId_t appID) {
+    spdlog::info("SteamAPI_ISteamUser_UserHasLicenseForApp called (flat API) appID {}", appID);
+    auto reslt = std::find_if(std::begin(dlcs), std::end(dlcs),
+        [&] (const tuple<int, string> a) { return std::get<0>(a) == appID; }) != std::end(dlcs);
+    if (reslt) {
+        spdlog::info("SteamAPI_ISteamUser_UserHasLicenseForApp result: owned");
+        return (EUserHasLicenseForAppResult)0;
+    }
+    spdlog::info("SteamAPI_ISteamUser_UserHasLicenseForApp result: not owned");
+    return (EUserHasLicenseForAppResult)2;
+}
+
 extern "C" void *dlsym(void *handle, const char *name)
 {   
     // filelog->info("modified dlsym called with {0}", name);
@@ -676,6 +740,24 @@ extern "C" void *dlsym(void *handle, const char *name)
     //     filelog->info("custom: {0}, real: {1}", (void *)CreateInterface, real_dlsym(RTLD_NEXT, "CreateInterface"));
     //     return (void *)CreateInterface;
     // }
+
+    // Flat API interposition for Steamworks.NET: Mono-based Unity games
+    // resolve the flat API via dlsym(handle) on the already-loaded
+    // libsteam_api.so, which bypasses LD_PRELOAD symbol interposition.
+    // Hand out our DLC-related flat hooks for those names so the unlock
+    // logic applies there too. RTLD_NEXT stays real.
+    if (handle != RTLD_NEXT) {
+        if (!strcmp(name, "SteamAPI_ISteamApps_GetDLCCount"))
+            return (void *)SteamAPI_ISteamApps_GetDLCCount;
+        if (!strcmp(name, "SteamAPI_ISteamApps_BIsDlcInstalled"))
+            return (void *)SteamAPI_ISteamApps_BIsDlcInstalled;
+        if (!strcmp(name, "SteamAPI_ISteamApps_BIsSubscribedApp"))
+            return (void *)SteamAPI_ISteamApps_BIsSubscribedApp;
+        if (!strcmp(name, "SteamAPI_ISteamApps_BGetDLCDataByIndex"))
+            return (void *)SteamAPI_ISteamApps_BGetDLCDataByIndex;
+        if (!strcmp(name, "SteamAPI_ISteamUser_UserHasLicenseForApp"))
+            return (void *)SteamAPI_ISteamUser_UserHasLicenseForApp;
+    }
 
     return real_dlsym(handle,name);
 }

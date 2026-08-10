@@ -18,6 +18,18 @@ const int k_cubAppProofOfPurchaseKeyMax = 240;			// max supported length of a le
 //-----------------------------------------------------------------------------
 // Purpose: interface to app data
 //-----------------------------------------------------------------------------
+
+// Games can specify what settings the user has selected or has been selected by default based
+// on the user's machine.
+enum EGamePerformanceSetting
+{
+	k_EGamePerformanceSetting_NotSet	= 0,
+	k_EGamePerformanceSetting_Low		= 1,
+	k_EGamePerformanceSetting_Medium	= 2,
+	k_EGamePerformanceSetting_High		= 3,
+	k_EGamePerformanceSetting_Ultra		= 4,
+	k_EGamePerformanceSetting_Custom		= 5,
+};
 class ISteamApps
 {
 public:
@@ -108,9 +120,25 @@ public:
 
 	// check if game is a timed trial with limited playtime
 	virtual bool BIsTimedTrial( uint32* punSecondsAllowed, uint32* punSecondsPlayed ) = 0; 
+
+	// set current DLC AppID being played (or 0 if none). Allows Steam to track usage of major DLC extensions
+	virtual bool SetDlcContext( AppId_t nAppID ) = 0;
+
+	// returns total number of known app branches (including default "public" branch ). nAvailable is number of available betas
+	virtual int  GetNumBetas( int *pnAvailable, int *pnPrivate ) = 0; //
+
+	// return beta branch details, name, description, current BuildID and state flags (EBetaBranchFlags)
+	virtual bool GetBetaInfo( int iBetaIndex, uint32 *punFlags, uint32 *punBuildID, char *pchBetaName, int cchBetaName, char *pchDescription, int cchDescription, uint32 *punLastUpdated ) = 0; // iterate through
+
+	// select this beta branch for this app as active, might need the game to restart so Steam can update to that branch
+	virtual bool SetActiveBeta( const char *pchBetaName ) = 0;
+
+	// game performance settings
+	virtual void SetGamePerformanceSetting( EGamePerformanceSetting setting ) = 0;
+	virtual void SetGameRenderResolution( uint32 unWidth, uint32 unHeight ) = 0;
 };
 
-#define STEAMAPPS_INTERFACE_VERSION "STEAMAPPS_INTERFACE_VERSION008"
+#define STEAMAPPS_INTERFACE_VERSION "STEAMAPPS_INTERFACE_VERSION009"
 
 // Global interface accessor
 //CREAM_COMMENTED inline ISteamApps *SteamApps();
