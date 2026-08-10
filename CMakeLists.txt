@@ -40,6 +40,23 @@ ADD_EXECUTABLE(creamlinux_vtable_test
 )
 add_test(NAME vtable COMMAND creamlinux_vtable_test)
 
+ADD_EXECUTABLE(creamlinux_fork_test
+    ${CMAKE_SOURCE_DIR}/tests/test_fork.cpp
+    ${CMAKE_SOURCE_DIR}/src/config.cpp
+)
+add_test(NAME fork COMMAND creamlinux_fork_test)
+
+ADD_EXECUTABLE(creamlinux_flat_test
+    ${CMAKE_SOURCE_DIR}/tests/test_flat.cpp
+    ${CMAKE_SOURCE_DIR}/src/config.cpp
+)
+TARGET_LINK_LIBRARIES(creamlinux_flat_test ${CMAKE_DL_LIBS})
+add_test(NAME flat COMMAND creamlinux_flat_test)
+
+add_test(NAME cream_sh COMMAND bash
+    ${CMAKE_SOURCE_DIR}/tests/test_cream_sh.sh
+    ${CMAKE_SOURCE_DIR}/package)
+
 add_custom_command(
         TARGET Creamlinux POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory

@@ -181,6 +181,31 @@ def merge_dlcs(ini, new_dlcs, refresh_names):
     return added, updated, skipped
 
 
+def dedupe_dlc_section(ini):
+    """Drop duplicate keys from the [dlc] section, keeping the first
+    occurrence. Upstream synced lists occasionally carry duplicates.
+    Returns the number of removed lines."""
+    sec = ini.get_section("dlc")
+    seen = set()
+    keep = []
+    for line in sec["lines"]:
+        key, _ = IniFile._split_key(line)
+        if key is not None and key in seen:
+            continue
+        if key is not None:
+            seen.add(key)
+        keep.append(line)
+    removed = len(sec["lines"]) - len(keep)
+    if removed:
+        sec["lines"] = keep
+        sec["index"] = {}
+        for i, line in enumerate(keep):
+            key, _ = IniFile._split_key(line)
+            if key is not None:
+                sec["index"][key] = i
+    return removed
+
+
 # ---------------------------------------------------------------- main -----
 
 def main():
@@ -231,7 +256,9 @@ def main():
 
     # 3. merge
     added, updated, skipped = merge_dlcs(ini, all_dlcs, args.refresh_names)
-    print(f"Merge result: {added} added, {updated} updated, {skipped} unchanged")
+    removed = dedupe_dlc_section(ini)
+    print(f"Merge result: {added} added, {updated} updated, "
+          f"{skipped} unchanged, {removed} duplicate(s) removed")
 
     # 4. dry-run or write
     if args.dry_run:
