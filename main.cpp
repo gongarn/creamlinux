@@ -32,7 +32,17 @@ mINI::INIStructure ini;
 //TODO: hook dlvsym as well
 void ensure_realdlsym() {
     if (real_dlsym == NULL) {
+        // The x86-64 ABI exports dlsym as GLIBC_2.2.5, but the i386 ABI
+        // uses GLIBC_2.0 (and GLIBC_2.34 on glibc >= 2.34). Trying only the
+        // 64-bit version string left real_dlsym NULL in 32-bit builds, so
+        // ANY dlsym() call in a 32-bit process with creamlinux preloaded
+        // (e.g. the 32-bit Paradox launcher 'dowser') crashed with a NULL
+        // call - showing up as "Killed"/SIGSEGV (issues #51, #56).
         *(void **)(&real_dlsym) = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.2.5");
+        if (real_dlsym == NULL)
+            *(void **)(&real_dlsym) = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.0");
+        if (real_dlsym == NULL)
+            *(void **)(&real_dlsym) = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.34");
     }
 }
 
@@ -248,32 +258,32 @@ public:
     };
     ISteamUser* real_steamUser;
 };
-static std::shared_ptr<Hookey_SteamApps_Class> steamapps_instance;
+// Fork safety (issue #56): Clausewitz-engine games (HOI4) fork() without
+// exec when restarting, and the forked child exits normally. Exit-time
+// destructors of static objects then run in the child's copy of the process;
+// a crash there surfaces as "Killed"/SIGSEGV right after launch. The wrapper
+// instances are therefore heap-allocated and intentionally never freed, so
+// their destructors never run - in parent or child.
+static Hookey_SteamApps_Class* steamapps_instance = nullptr;
 
 ISteamApps* Hookey_SteamApps(ISteamApps* real_steamApps) {
     if (steamapps_instance != NULL) {
-        ISteamApps* ptraccess = steamapps_instance.get();
-        auto debg = ptraccess->GetDLCCount();
-        return steamapps_instance.get();
-    } else {
-        Hookey_SteamApps_Class nhooky;
-        nhooky.real_steamApps = real_steamApps;
-        steamapps_instance = std::make_shared<Hookey_SteamApps_Class>(nhooky);
-        return Hookey_SteamApps(real_steamApps);
+        return steamapps_instance;
     }
+    steamapps_instance = new Hookey_SteamApps_Class();
+    steamapps_instance->real_steamApps = real_steamApps;
+    return steamapps_instance;
 }
 
-static std::shared_ptr<Hookey_SteamUser_Class> steamuser_instance;
+static Hookey_SteamUser_Class* steamuser_instance = nullptr;
 
 ISteamUser* Hookey_SteamUser(ISteamUser* real_steamUser) {
     if (steamuser_instance != NULL) {
-        return steamuser_instance.get();
-    } else {
-        Hookey_SteamUser_Class nhooky;
-        nhooky.real_steamUser = real_steamUser;
-        steamuser_instance = std::make_shared<Hookey_SteamUser_Class>(nhooky);
-        return Hookey_SteamUser(real_steamUser);
+        return steamuser_instance;
     }
+    steamuser_instance = new Hookey_SteamUser_Class();
+    steamuser_instance->real_steamUser = real_steamUser;
+    return steamuser_instance;
 }
 
 class Hookey_SteamClient_Class : public ISteamClient {
@@ -414,17 +424,15 @@ public:
     ISteamClient* real_steamClient;
 };
 
-static std::shared_ptr<Hookey_SteamClient_Class> steamclient_instance;
+static Hookey_SteamClient_Class* steamclient_instance = nullptr;
 
 ISteamClient* Hookey_SteamClient(ISteamClient* real_steamClient) {
     if (steamclient_instance != NULL) {
-        return steamclient_instance.get();
-    } else {
-        Hookey_SteamClient_Class nhooky;
-        nhooky.real_steamClient = real_steamClient;
-        steamclient_instance = std::make_shared<Hookey_SteamClient_Class>(nhooky);
-        return Hookey_SteamClient(real_steamClient);
+        return steamclient_instance;
     }
+    steamclient_instance = new Hookey_SteamClient_Class();
+    steamclient_instance->real_steamClient = real_steamClient;
+    return steamclient_instance;
 }
 
 #define STEAMAPPS_INTERFACE_VERSION_N008 "STEAMAPPS_INTERFACE_VERSION008"
