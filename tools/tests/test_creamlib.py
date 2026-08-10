@@ -37,11 +37,16 @@ def make_fake_steam(root):
         fh.write('"AppState"\n{\n\t"appid"\t\t"222222"\n'
                  '\t"name"\t\t"Fake Proton Game"\n'
                  '\t"installdir"\t\t"FakeProton"\n}\n')
-    # native game: libsteam_api.so in lib/ subfolder, dlc content present
+    # native game: libsteam_api.so in lib/ subfolder, dlc content present,
+    # plus stray Windows DLLs (Paradox ships both builds in one depot,
+    # like the real CK3 layout)
     native = os.path.join(common, "FakeNative")
     os.makedirs(os.path.join(native, "lib"))
     open(os.path.join(native, "lib", "libsteam_api.so"), "w").close()
-    dlc = os.path.join(native, "dlc")
+    open(os.path.join(native, "steam_api64.dll"), "w").close()
+    os.makedirs(os.path.join(native, "game"))
+    open(os.path.join(native, "game", "steam_api.dll"), "w").close()
+    dlc = os.path.join(native, "game", "dlc")
     os.makedirs(dlc)
     for i in range(12):
         open(os.path.join(dlc, f"dlc{i:03d}"), "w").close()
@@ -85,6 +90,20 @@ class TestScan(unittest.TestCase):
         # tool apps are excluded
         self.assertNotIn("1070560", by_id)
 
+    def test_find_steam_api_files_prefers_native(self):
+        # a native game that also ships stray Windows DLLs (CK3 layout)
+        # must still be detected as native
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        os.makedirs(os.path.join(root, "game"))
+        open(os.path.join(root, "game", "steam_api.dll"), "w").close()
+        os.makedirs(os.path.join(root, "binaries"))
+        open(os.path.join(root, "binaries", "steam_api64.dll"), "w").close()
+        open(os.path.join(root, "binaries", "libsteam_api.so"), "w").close()
+        found_type, path = creamlib.find_steam_api_files(root)
+        self.assertEqual(found_type, "native")
+        self.assertEqual(os.path.basename(path), "libsteam_api.so")
+
     def test_find_steam_api_files_depth(self):
         root = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, root)
@@ -95,6 +114,31 @@ class TestScan(unittest.TestCase):
                          (None, None))
         self.assertEqual(creamlib.find_steam_api_files(root, max_depth=4),
                          ("native", os.path.join(deep, "libsteam_api.so")))
+
+    def test_check_dlc_files_game_subdir(self):
+        # Paradox native layout: DLC content lives in game/dlc
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        dlc = os.path.join(root, "game", "dlc")
+        os.makedirs(dlc)
+        for i in range(12):
+            open(os.path.join(dlc, f"dlc{i:03d}"), "w").close()
+        self.assertEqual(creamlib.check_dlc_files(root, "native"), "ok")
+        self.assertEqual(creamlib.check_dlc_files(root, "proton"), "unknown")
+
+    def test_scan_detects_smokeapi_in_dll_dir(self):
+        # smoke proxy is installed next to the game's steam_api dll,
+        # not in the game root
+        root, vdf = make_fake_steam(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root)
+        dll_dir = os.path.join(root, "steamapps", "common", "FakeProton",
+                               "bin", "x64")
+        open(os.path.join(dll_dir, "version.dll"), "w").close()
+        with patch.object(creamlib, "find_steam_library_roots",
+                          return_value=[vdf]):
+            games = creamlib.scan_games()
+        by_id = {g["appid"]: g for g in games}
+        self.assertEqual(by_id["222222"]["installed"], "smokeapi")
 
 
 class TestInstall(unittest.TestCase):

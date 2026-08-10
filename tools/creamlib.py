@@ -54,9 +54,16 @@ def latest_release_asset(repo):
 
 def find_steam_api_files(game_dir, max_depth=3):
     """Find libsteam_api.so / steam_api*.dll inside a game folder.
-    Returns ('native', path) or ('proton', path) or (None, None)."""
+    Returns ('native', path) or ('proton', path) or (None, None).
+
+    A libsteam_api.so wins over any steam_api*.dll: some native games
+    (e.g. Paradox titles like CK3) ship stray Windows DLLs in the same
+    folder, and only the .so proves a native Linux build."""
     root_depth = game_dir.rstrip(os.sep).count(os.sep)
+    proton_path = None
     for dirpath, dirnames, filenames in os.walk(game_dir):
+        dirnames.sort()
+        filenames.sort()
         depth = dirpath.rstrip(os.sep).count(os.sep) - root_depth
         if depth >= max_depth:
             dirnames[:] = []
@@ -64,10 +71,13 @@ def find_steam_api_files(game_dir, max_depth=3):
         for fname in filenames:
             if fname == "libsteam_api.so":
                 return "native", os.path.join(dirpath, fname)
-            if fname in ("steam_api.dll", "steam_api64.dll"):
-                return "proton", os.path.join(dirpath, fname)
+            if (fname in ("steam_api.dll", "steam_api64.dll")
+                    and proton_path is None):
+                proton_path = os.path.join(dirpath, fname)
         if depth >= max_depth - 1:
             dirnames[:] = []
+    if proton_path is not None:
+        return "proton", proton_path
     return None, None
 
 
@@ -414,11 +424,12 @@ TOOL_APPS = {  # Steam infrastructure, not games
 def check_dlc_files(game_dir, game_type):
     """Estimate whether the game's DLC content files are present.
     Returns 'ok' / 'partial' / 'none' / 'unknown'.
-    Native games store DLC content in dlc/ (Paradox) or DLC/ folders;
-    for Proton games the layout is unpredictable -> 'unknown'."""
+    Native games store DLC content in dlc/ (Paradox: game/dlc) or DLC/
+    folders; for Proton games the layout is unpredictable -> 'unknown'."""
     if game_type != "native":
         return "unknown"
-    for folder in ("dlc", "DLC", "dlc_metadata"):
+    for folder in ("dlc", "DLC", "dlc_metadata",
+                   os.path.join("game", "dlc"), os.path.join("game", "DLC")):
         path = os.path.join(game_dir, folder)
         if os.path.isdir(path):
             try:
@@ -468,8 +479,10 @@ def scan_games():
                     installed = "creamlinux"
             elif found_type == "proton":
                 game_type = "proton"
-                if (os.path.exists(os.path.join(game_dir, "version.dll")) or
-                        os.path.exists(os.path.join(game_dir, "winhttp.dll"))):
+                _, dll_dir = detect_bitness(game_dir)
+                if dll_dir and (os.path.exists(
+                        os.path.join(dll_dir, "version.dll")) or
+                        os.path.exists(os.path.join(dll_dir, "winhttp.dll"))):
                     installed = "smokeapi"
             games.append({"appid": appid, "name": name, "game_dir": game_dir,
                           "game_type": game_type, "installed": installed,
