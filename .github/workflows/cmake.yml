@@ -25,22 +25,32 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: ubuntu:22.04
 
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Fix apt mirrors (workaround for mirror+file 404s on i386 packages)
+    - name: Install build deps
       run: |
-        sudo sed -i 's|mirror+file:/etc/apt/apt-mirrors.txt|http://azure.archive.ubuntu.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
-        sudo apt-get update
+        apt-get update
+        apt-get install -y --no-install-recommends build-essential gcc-multilib g++-multilib cmake git zip python3 gh
 
-    - name: Install gcc-multilib, g++-multilib
-      run: sudo apt-get install -y gcc-multilib g++-multilib
+    - uses: actions/checkout@v4
 
     - name: Build 32-bit and 64-bit
       run: |
         chmod +x ./build.sh
         ./build.sh
+      shell: bash
+
+    - name: Assert glibc compatibility (max required GLIBC symbol version <= 2.35)
+      run: |
+        maxver=$(objdump -T output/lib64Creamlinux.so output/lib32Creamlinux.so \
+          | grep -oE 'GLIBC_2\.[0-9]+' | sort -uV | tail -1)
+        echo "max required: $maxver"
+        case "$maxver" in
+          GLIBC_2.2[0-9]|GLIBC_2.3[0-5]) ;;   # <= 2.35 OK
+          *) echo "::error::glibc requirement exceeds 2.35 ($maxver)"; exit 1 ;;
+        esac
       shell: bash
 
     - name: Package artifacts
