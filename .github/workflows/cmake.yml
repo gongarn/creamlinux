@@ -32,7 +32,7 @@ jobs:
     - name: Install build deps
       run: |
         apt-get update
-        apt-get install -y --no-install-recommends build-essential gcc-multilib g++-multilib cmake git zip python3 gh
+        apt-get install -y --no-install-recommends ca-certificates build-essential gcc-multilib g++-multilib cmake git zip python3 gh
 
     - uses: actions/checkout@v4
 
