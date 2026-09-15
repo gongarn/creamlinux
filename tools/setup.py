@@ -124,7 +124,9 @@ def main():
     if args.uninstall is not None:
         return cmd_uninstall(args)
     if args.update_dlc is not None:
+        # standalone refresh: merge into the repo distribution ini
         return creamlib.run_dlc_update(args.update_dlc,
+                                       game_dir=creamlib.REPO_ROOT,
                                        dry_run=args.dry_run,
                                        log=print)
     if not args.dir:
@@ -138,8 +140,8 @@ def main():
 
     # optional: refresh the DLC list first
     if args.update_dlc:
-        rc = creamlib.run_dlc_update(args.update_dlc, dry_run=args.dry_run,
-                                     log=print)
+        rc = creamlib.run_dlc_update(args.update_dlc, game_dir=game_dir,
+                                     dry_run=args.dry_run, log=print)
         if rc != 0:
             return rc
 

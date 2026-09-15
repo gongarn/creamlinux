@@ -552,12 +552,17 @@ def write_game_ini(game_dir, config, methods, dlc_entries, log=print):
 
 # ------------------------------------------------------------ dlc update ---
 
-def run_dlc_update(appid, dry_run=False, log=print):
-    """Run tools/update-dlc.py for an appid, streaming output to log()."""
+def run_dlc_update(appid, game_dir=None, dry_run=False, log=print):
+    """Run tools/update-dlc.py for an appid, streaming output to log().
+    game_dir selects the cream_api.ini to merge into."""
+    if not game_dir:
+        log("error: game_dir is required for dlc update")
+        return 1
     if not os.path.exists(UPDATE_DLC_SCRIPT):
         log(f"error: {UPDATE_DLC_SCRIPT} not found")
         return 1
-    cmd = [sys.executable, UPDATE_DLC_SCRIPT, str(appid)]
+    cmd = [sys.executable, UPDATE_DLC_SCRIPT, str(appid),
+           "--output", game_ini_path(game_dir)]
     if dry_run:
         cmd.append("--dry-run")
     log(f"Running: {' '.join(cmd)}")

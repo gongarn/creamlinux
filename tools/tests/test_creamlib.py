@@ -237,6 +237,51 @@ class TestUninstall(unittest.TestCase):
         self.assertIn("steam_api64.dll", remaining)  # restored
 
 
+
+class TestDlcUpdate(unittest.TestCase):
+    """run_dlc_update must target the game's cream_api.ini, not the CWD
+    (regression: GUI button wrote ./cream_api.ini instead of the game dir)."""
+
+    def test_requires_game_dir(self):
+        lines = []
+        rc = creamlib.run_dlc_update("394360", log=lines.append)
+        self.assertEqual(rc, 1)
+        self.assertTrue(any("game_dir is required" in m for m in lines))
+
+    def test_output_is_game_ini(self):
+        game = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, game)
+        fake_script = os.path.join(game, "update-dlc.py")
+        with open(fake_script, "w") as fh:
+            fh.write("#!/usr/bin/env python3\n"
+                     "import sys\n"
+                     "assert '--output' in sys.argv\n"
+                     "out = sys.argv[sys.argv.index('--output') + 1]\n"
+                     "assert out == %r, out\n"
+                     "open(out, 'w').write('[dlc]\\n394360 = HOI4\\n')\n"
+                     % os.path.join(game, "cream_api.ini"))
+        lines = []
+        with patch.object(creamlib, "UPDATE_DLC_SCRIPT", fake_script):
+            rc = creamlib.run_dlc_update("394360", game_dir=game,
+                                         log=lines.append)
+        self.assertEqual(rc, 0)
+        self.assertTrue(os.path.exists(os.path.join(game, "cream_api.ini")))
+
+    def test_dry_run_does_not_write(self):
+        game = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, game)
+        fake_script = os.path.join(game, "update-dlc.py")
+        with open(fake_script, "w") as fh:
+            fh.write("#!/usr/bin/env python3\n"
+                     "import sys\n"
+                     "assert '--dry-run' in sys.argv\n")
+        with patch.object(creamlib, "UPDATE_DLC_SCRIPT", fake_script):
+            rc = creamlib.run_dlc_update("394360", game_dir=game,
+                                         dry_run=True, log=lambda m: None)
+        self.assertEqual(rc, 0)
+        self.assertFalse(os.path.exists(os.path.join(game, "cream_api.ini")))
+
+
 class TestIni(unittest.TestCase):
     def test_roundtrip(self):
         game = tempfile.mkdtemp()
