@@ -13,7 +13,8 @@ Usage:
 
 The script preserves comments, section order and foreign sections; only the
 [dlc] section is touched. New entries are appended, existing ids keep their
-position but may get their name refreshed.
+position but may get their name refreshed. The file's line endings (LF or
+CRLF - package/cream_api.ini is CRLF) are preserved as well.
 """
 
 import argparse
@@ -27,6 +28,7 @@ CC = "us"
 LANG = "english"
 RETRIES = 3
 SLEEP_BETWEEN_REQUESTS = 0.8  # seconds, keep Steam API happy
+DRY_RUN_PREVIEW_LIMIT = 50   # max diff lines printed by --dry-run
 
 USER_AGENT = "creamlinux-update-dlc/1.0"
 
@@ -92,6 +94,13 @@ class IniFile:
     def __init__(self):
         self.sections = []  # list of dicts: {name, lines, index_of_key}
         self.preamble = []  # lines before the first section
+        self.newline = "\n"  # line ending of the source file
+
+    @staticmethod
+    def _detect_newline(text):
+        crlf = text.count("\r\n")
+        lf = text.count("\n") - crlf
+        return "\r\n" if crlf > lf else "\n"
 
     @staticmethod
     def _split_key(line):
@@ -103,6 +112,7 @@ class IniFile:
     @classmethod
     def parse(cls, text):
         ini = cls()
+        ini.newline = cls._detect_newline(text)
         current = None
         for line in text.splitlines():
             stripped = line.strip()
@@ -155,7 +165,25 @@ class IniFile:
                 out.append("")
             out.append(f"[{sec['name']}]")
             out.extend(sec["lines"])
-        return "\n".join(out) + ("\n" if out else "")
+        if not out:
+            return ""
+        return self.newline.join(out) + self.newline
+
+
+def load_ini(path):
+    """Read an ini file, keeping its line endings (newline='' disables the
+    universal-newline translation that would hide CRLF from the parser)."""
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as fh:
+            return IniFile.parse(fh.read())
+    except FileNotFoundError:
+        return IniFile.parse("")
+
+
+def save_ini(path, ini):
+    """Write the ini back without translating line endings."""
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(ini.render())
 
 
 # ------------------------------------------------------------- merging -----
@@ -206,6 +234,33 @@ def dedupe_dlc_section(ini):
     return removed
 
 
+def dlc_diff(ini, new_dlcs, refresh_names):
+    """Describe what merge_dlcs() would change, as (marker, key, text) rows.
+    Must be called before merge_dlcs() mutates the ini."""
+    changes = []
+    for appid, name in new_dlcs:
+        key = str(appid)
+        old = ini.get("dlc", key)
+        if old is None:
+            changes.append(("+", key, name))
+        elif refresh_names and old != name:
+            changes.append(("~", key, f"{old} -> {name}"))
+    return changes
+
+
+def print_dry_run(changes, limit=DRY_RUN_PREVIEW_LIMIT):
+    """Preview the merge as a bounded diff. Dumping the whole file buried the
+    merge summary and flooded the GUI log tail."""
+    print(f"\n--- dry run: {len(changes)} change(s), file not written ---")
+    if not changes:
+        print("(nothing to add or refresh)")
+        return
+    for marker, key, text in changes[:limit]:
+        print(f"{marker} {key} = {text}")
+    if len(changes) > limit:
+        print(f"... and {len(changes) - limit} more")
+
+
 # ---------------------------------------------------------------- main -----
 
 def main():
@@ -247,14 +302,10 @@ def main():
         return
 
     # 2. load existing ini
-    try:
-        with open(args.output, "r", encoding="utf-8") as fh:
-            text = fh.read()
-    except FileNotFoundError:
-        text = ""
-    ini = IniFile.parse(text)
+    ini = load_ini(args.output)
 
     # 3. merge
+    changes = dlc_diff(ini, all_dlcs, args.refresh_names)
     added, updated, skipped = merge_dlcs(ini, all_dlcs, args.refresh_names)
     removed = dedupe_dlc_section(ini)
     print(f"Merge result: {added} added, {updated} updated, "
@@ -262,11 +313,9 @@ def main():
 
     # 4. dry-run or write
     if args.dry_run:
-        print("\n--- dry run: file content after merge ---")
-        print(ini.render())
+        print_dry_run(changes)
         return
-    with open(args.output, "w", encoding="utf-8") as fh:
-        fh.write(ini.render())
+    save_ini(args.output, ini)
     print(f"Wrote {args.output}")
 
 
