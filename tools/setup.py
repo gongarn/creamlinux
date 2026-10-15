@@ -48,8 +48,8 @@ def cmd_scan(args):
     return 0
 
 
-def cmd_install(args):
-    game = creamlib.find_game(args.install)
+def cmd_install(args, game=None):
+    game = game or creamlib.find_game(args.install)
     if not game:
         print(f"error: app {args.install} not found in Steam libraries",
               file=sys.stderr)
@@ -90,62 +90,8 @@ def cmd_uninstall(args):
     return 0
 
 
-def main():
-    ap = argparse.ArgumentParser(
-        description="Install/remove DLC unlockers for Steam games",
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dir", help="game installation directory")
-    ap.add_argument("--mode", choices=["auto", "native", "proton"],
-                    default="auto")
-    ap.add_argument("--smokeapi-mode", choices=["hook", "koaloader", "proxy"],
-                    default="hook",
-                    help="Proton install mode: hook (self-hook, default), "
-                         "koaloader (injector proxy) or proxy (replace "
-                         "steam_api dll)")
-    ap.add_argument("--scan", action="store_true",
-                    help="list installed Steam games and their unlocker status")
-    ap.add_argument("--install", type=int, metavar="APPID",
-                    help="install the unlocker for an installed Steam game")
-    ap.add_argument("--uninstall", type=int, metavar="APPID",
-                    help="remove the unlocker from an installed Steam game")
-    ap.add_argument("--keep-ini", action="store_true",
-                    help="keep cream_api.ini when uninstalling")
-    ap.add_argument("--update-dlc", type=int, metavar="APPID",
-                    help="refresh cream_api.ini DLC list for an appid")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="print the plan without changing anything")
-    ap.add_argument("--verbose", action="store_true")
-    args = ap.parse_args()
-
-    if args.scan:
-        return cmd_scan(args)
-    if args.install is not None:
-        return cmd_install(args)
-    if args.uninstall is not None:
-        return cmd_uninstall(args)
-    if args.update_dlc is not None:
-        # standalone refresh: merge into the repo distribution ini
-        return creamlib.run_dlc_update(args.update_dlc,
-                                       game_dir=creamlib.REPO_ROOT,
-                                       dry_run=args.dry_run,
-                                       log=print)
-    if not args.dir:
-        ap.error("one of --dir, --scan, --install, --uninstall or "
-                 "--update-dlc is required")
-
-    game_dir = os.path.abspath(args.dir)
-    if not os.path.isdir(game_dir):
-        print(f"error: {game_dir} is not a directory", file=sys.stderr)
-        return 1
-
-    # optional: refresh the DLC list first
-    if args.update_dlc:
-        rc = creamlib.run_dlc_update(args.update_dlc, game_dir=game_dir,
-                                     dry_run=args.dry_run, log=print)
-        if rc != 0:
-            return rc
-
-    # mode detection
+def cmd_install_dir(args, game_dir):
+    """Install into an explicit --dir, auto-detecting native/Proton."""
     mode = args.mode
     if mode == "auto":
         mode = creamlib.detect_mode(game_dir)
@@ -184,6 +130,90 @@ def main():
                                        mode=args.smokeapi_mode)
 
     return 1
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Install/remove DLC unlockers for Steam games",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--dir", help="game installation directory")
+    ap.add_argument("--mode", choices=["auto", "native", "proton"],
+                    default="auto")
+    ap.add_argument("--smokeapi-mode", choices=["hook", "koaloader", "proxy"],
+                    default="hook",
+                    help="Proton install mode: hook (self-hook, default), "
+                         "koaloader (injector proxy) or proxy (replace "
+                         "steam_api dll)")
+    ap.add_argument("--scan", action="store_true",
+                    help="list installed Steam games and their unlocker status")
+    ap.add_argument("--install", type=int, metavar="APPID",
+                    help="install the unlocker for an installed Steam game")
+    ap.add_argument("--uninstall", type=int, metavar="APPID",
+                    help="remove the unlocker from an installed Steam game")
+    ap.add_argument("--keep-ini", action="store_true",
+                    help="keep cream_api.ini when uninstalling")
+    ap.add_argument("--update-dlc", type=int, metavar="APPID",
+                    help="refresh the installed game's cream_api.ini DLC list "
+                         "from the Steam Store API")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="print the plan without changing anything")
+    ap.add_argument("--verbose", action="store_true")
+    args = ap.parse_args()
+
+    if args.scan:
+        return cmd_scan(args)
+    if args.uninstall is not None:
+        return cmd_uninstall(args)
+
+    # Resolve the cream_api.ini that --dir/--install/--update-dlc must target.
+    # The DLC refresh is never allowed to fall back to the process CWD or the
+    # repo checkout: doing so merged the fetched list into the wrong file while
+    # the game kept reading its own cream_api.ini, so the update looked like a
+    # no-op.
+    game = None
+    game_dir = None
+    if args.dir:
+        game_dir = os.path.abspath(args.dir)
+        if not os.path.isdir(game_dir):
+            print(f"error: {game_dir} is not a directory", file=sys.stderr)
+            return 1
+    elif args.install is not None or args.update_dlc is not None:
+        lookup = args.install if args.install is not None else args.update_dlc
+        game = creamlib.find_game(lookup)
+        if not game:
+            print(f"error: app {lookup} not found in Steam libraries",
+                  file=sys.stderr)
+            if args.update_dlc is not None:
+                print("hint: to refresh a cream_api.ini outside the Steam "
+                      "libraries use tools/update-dlc.py --output <path>",
+                      file=sys.stderr)
+            return 1
+        game_dir = game["game_dir"]
+
+    if args.install is not None:
+        rc = cmd_install(args, game)
+        if rc != 0:
+            return rc
+
+    # --install already resolved its own game above
+    if args.dir and args.install is None:
+        rc = cmd_install_dir(args, game_dir)
+        if rc != 0:
+            return rc
+
+    # Refresh the DLC list last: installing a native game copies the
+    # distribution cream_api.ini over the game's own file, which would wipe a
+    # freshly fetched list.
+    if args.update_dlc is not None:
+        rc = creamlib.run_dlc_update(args.update_dlc, game_dir=game_dir,
+                                     dry_run=args.dry_run, log=print)
+        if rc != 0:
+            return rc
+
+    if not args.dir and args.install is None and args.update_dlc is None:
+        ap.error("one of --dir, --scan, --install, --uninstall or "
+                 "--update-dlc is required")
+    return 0
 
 
 if __name__ == "__main__":

@@ -220,8 +220,10 @@ def api_dlc_update(handler, body):
 
     def job():
         log_line(f"=== Updating DLC list for {game['name']} ===")
-        creamlib.run_dlc_update(game["appid"], game_dir=game["game_dir"],
-                                dry_run=dry_run, log=log_line)
+        rc = creamlib.run_dlc_update(game["appid"], game_dir=game["game_dir"],
+                                     dry_run=dry_run, log=log_line)
+        if rc != 0:
+            log_line(f"error: DLC update failed (exit code {rc})")
         log_line("=== Done ===")
 
     try:
